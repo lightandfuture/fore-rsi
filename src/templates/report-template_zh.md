@@ -20,12 +20,10 @@
 - 提案状态取自该方向 `progress.yaml`，并与 `figures/progress/progress-summary.md` 一致；
 - 决策原因只写简要结论，完整诊断见该方向的 `iteration.md`。
 
-| 轮次 | 方向 | 方向简述 | 提案（链接） | 提案状态 | 采用状态 | 决策原因（简述） |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | [qkv-views](iterations/qkv-views/notes/iteration.md) | 一句话说明改动对象和手段 | [proposal](iterations/qkv-views/notes/proposal.md) | valid | 采用 | 实测收益满足本轮目标 |
-| 0 | [moe-overlap](iterations/moe-overlap/notes/iteration.md) | 一句话说明改动对象和手段 | [proposal](iterations/moe-overlap/notes/proposal.md) | runtime_failed | 不采用 | 运行失败，未获得有效测量 |
-
-探索方向添加父节点
+| 轮次 | 父节点 | 方向 | 方向简述 | 提案（链接） | 提案状态 | 采用状态 | 决策原因（简述） |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | baseline | [qkv-views](iterations/qkv-views/notes/iteration.md) | 一句话说明改动对象和手段 | [proposal](iterations/qkv-views/notes/proposal.md) | valid | 采用 | 实测收益满足本轮目标 |
+| 0 | baseline | [moe-overlap](iterations/moe-overlap/notes/iteration.md) | 一句话说明改动对象和手段 | [proposal](iterations/moe-overlap/notes/proposal.md) | runtime_failed | 不采用 | 运行失败，未获得有效测量 |
 
 ## 知识沉淀
 

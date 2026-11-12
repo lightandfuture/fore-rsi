@@ -1,6 +1,6 @@
 # Report
 
-English | [Simplified Chinese](report-template-mod_zh.md)
+English | [Simplified Chinese](report-template_zh.md)
 
 - This report serves both as an evolution narrative for users and as an index of reusable knowledge: every exploration direction, including failed ones, creates or updates a knowledge base entry.
 - Commands and raw results for each round remain in the experiment records.
@@ -20,12 +20,10 @@ English | [Simplified Chinese](report-template-mod_zh.md)
 - Proposal status comes from the direction's `progress.yaml` and matches `figures/progress/progress-summary.md`.
 - Keep the decision reason brief; see the direction's `iteration.md` for the full diagnosis.
 
-| Round | Direction | Direction summary | Proposal (link) | Proposal status | Adoption status | Decision reason (brief) |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | [qkv-views](iterations/qkv-views/notes/iteration.md) | One sentence describing what is changed and how | [proposal](iterations/qkv-views/notes/proposal.md) | valid | adopted | Measured gain meets this round's objective |
-| 0 | [moe-overlap](iterations/moe-overlap/notes/iteration.md) | One sentence describing what is changed and how | [proposal](iterations/moe-overlap/notes/proposal.md) | runtime_failed | not adopted | Runtime failure prevented a valid measurement |
-
-Add a parent node to each exploration direction.
+| Round | Parent node | Direction | Direction summary | Proposal (link) | Proposal status | Adoption status | Decision reason (brief) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | baseline | [qkv-views](iterations/qkv-views/notes/iteration.md) | One sentence describing what is changed and how | [proposal](iterations/qkv-views/notes/proposal.md) | valid | adopted | Measured gain meets this round's objective |
+| 0 | baseline | [moe-overlap](iterations/moe-overlap/notes/iteration.md) | One sentence describing what is changed and how | [proposal](iterations/moe-overlap/notes/proposal.md) | runtime_failed | not adopted | Runtime failure prevented a valid measurement |
 
 ## Knowledge capture
 

@@ -1,9 +1,5 @@
 use super::*;
 
-pub(super) fn init_logging() {
-    crate::logging::init_file_logging("herdr-client.log");
-}
-
 pub(super) fn apply_reload(
     state: &mut ClientState,
     endpoints: &mut endpoint::EndpointRegistry,

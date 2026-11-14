@@ -19,8 +19,8 @@ class ReleaseTests(unittest.TestCase):
         self.git("init", "-q", "-b", "master")
         self.git("config", "user.name", "Release Test")
         self.git("config", "user.email", "release@example.invalid")
-        self.put("Cargo.toml", '[package]\nname = "herdr"\nversion = "1.0.0"\n[dependencies]\nserde = "1"\n')
-        self.put("Cargo.lock", 'version = 4\n[[package]]\nname = "herdr"\nversion = "1.0.0"\n[[package]]\nname = "serde"\nversion = "1.0.0"\n')
+        self.put("Cargo.toml", '[package]\nname = "fore-rsi-terminal"\nversion = "1.0.0"\n[dependencies]\nserde = "1"\n')
+        self.put("Cargo.lock", 'version = 4\n[[package]]\nname = "fore-rsi-terminal"\nversion = "1.0.0"\n[[package]]\nname = "serde"\nversion = "1.0.0"\n')
         self.put("src/main.rs", "fn main() {}\n")
         self.put("docs/next/CHANGELOG.md", "# Changelog\n")
         self.put("skills/herdr/SKILL.md", "Stable skill\n")
@@ -73,7 +73,7 @@ class ReleaseTests(unittest.TestCase):
     def test_code_dependencies_schema_and_build_changes_are_rejected(self):
         cases = {
             "src/main.rs": "fn main() { panic!(); }\n",
-            "Cargo.toml": '[package]\nname = "herdr"\nversion = "1.0.1"\n[dependencies]\nserde = "2"\n',
+            "Cargo.toml": '[package]\nname = "fore-rsi-terminal"\nversion = "1.0.1"\n[dependencies]\nserde = "2"\n',
             "Cargo.lock": Path("Cargo.lock").read_text().replace('name = "serde"\nversion = "1.0.0"', 'name = "serde"\nversion = "2.0.0"'),
             "docs/next/api/herdr-api.schema.json": "{}\n",
             ".github/workflows/release.yml": "changed\n",

@@ -44,9 +44,9 @@ mod transport;
 #[cfg(test)]
 use clipboard_forwarding::decode_clipboard_payload;
 use clipboard_forwarding::forward_clipboard;
+use config_reload::apply_reload;
 #[cfg(test)]
 use config_reload::reload_local_client_config;
-use config_reload::{apply_reload, init_logging};
 use events::ClientLoopEvent;
 use loop_config::ClientLoopConfig;
 use shell_runtime::*;
@@ -57,6 +57,7 @@ use transport::*;
 
 #[cfg(test)]
 pub(crate) use shell::{ClientShellConfig, ClientShellState};
+pub(crate) use startup::init_logging;
 pub use startup::{run_client, run_terminal_attach};
 pub use terminal_sessions::{run_terminal_session_control, run_terminal_session_observe};
 
@@ -177,8 +178,6 @@ fn run_client_with_mode(
     attach_escape: Option<AttachEscapeState>,
     log_message: &'static str,
 ) -> io::Result<()> {
-    init_logging();
-
     let loaded_config = crate::config::Config::load();
     // Windows may not have virtual terminal processing enabled until the rendered
     // client initializes the terminal, so defer the host mouse reset to
@@ -394,6 +393,7 @@ fn run_client_with_mode(
             return Ok(());
         }
 
+        tracing::error!(%err, "terminal client failed");
         std::process::exit(1);
     }
 

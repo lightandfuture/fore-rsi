@@ -1,12 +1,14 @@
 [package]
-name = "herdr"
+name = "fore-rsi-terminal"
 version = "0.9.5"
 edition = "2021"
 build = "build.rs"
-description = "terminal workspace manager for AI coding agents"
+autobins = false
+publish = false
+description = "ForeRSI terminal runtime"
 license = "Apache-2.0"
-repository = "https://github.com/herdrdev/herdr"
-homepage = "https://herdr.dev"
+repository = "https://github.com/shiweijiezero/fore-rsi"
+homepage = "https://github.com/shiweijiezero/fore-rsi"
 keywords = ["terminal", "tui", "ai", "agents", "multiplexer"]
 categories = ["command-line-utilities"]
 include = [
@@ -20,6 +22,10 @@ include = [
     "LICENSE",
     "Cargo.toml",
 ]
+
+[[bin]]
+name = "_terminal"
+path = "src/main.rs"
 
 [workspace]
 members = ["crates/ghostty-vt"]

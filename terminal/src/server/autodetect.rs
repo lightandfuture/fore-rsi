@@ -311,6 +311,7 @@ pub fn auto_detect_launch(saved_federation: bool) -> io::Result<()> {
             format!("cannot attach without a usable terminal: {err}; run inside a terminal"),
         )
     })?;
+    crate::client::init_logging();
     let socket_path = client_socket_path();
     info!(path = %socket_path.display(), "auto-detect launch starting");
 
@@ -330,6 +331,7 @@ pub fn auto_detect_launch(saved_federation: bool) -> io::Result<()> {
     });
     if let Err(error) = startup {
         if !saved_federation {
+            tracing::error!(%error, "local server startup failed");
             return Err(error);
         }
         tracing::warn!(%error, "Local startup failed; keeping saved machines available");

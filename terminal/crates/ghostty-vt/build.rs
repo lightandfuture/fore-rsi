@@ -47,7 +47,12 @@ fn zig_version(command: &str) -> Option<String> {
 }
 
 /// Reuse or prepare the host compiler and its vendored package cache.
-fn resolve_zig(manifest_dir: &Path, vendor_dir: &Path, host: &str) -> (String, PathBuf) {
+fn resolve_zig(
+    manifest_dir: &Path,
+    vendor_dir: &Path,
+    host: &str,
+    out_dir: &Path,
+) -> (String, PathBuf) {
     let bootstrap = manifest_dir.join("../../scripts/ensure_zig.py");
     let mut args = vec![
         "-I".to_owned(),
@@ -59,19 +64,32 @@ fn resolve_zig(manifest_dir: &Path, vendor_dir: &Path, host: &str) -> (String, P
         "--vendor-dir".to_owned(),
         vendor_dir.join("libghostty-vt").display().to_string(),
     ];
-    if let Ok(explicit) = env::var("ZIG") {
+    let prepared = if let Ok(explicit) = env::var("ZIG") {
         assert_eq!(
             zig_version(&explicit).as_deref(),
             Some(ZIG_VERSION),
             "ZIG must point to Zig {ZIG_VERSION}: {explicit}"
         );
-        args.extend(["--zig".to_owned(), explicit]);
-    } else if let Some(system) = (zig_version("zig").as_deref() == Some(ZIG_VERSION))
-        .then(|| "zig".to_owned())
-    {
-        args.extend(["--zig".to_owned(), system]);
+        Some(explicit)
+    } else {
+        (zig_version("zig").as_deref() == Some(ZIG_VERSION)).then(|| "zig".to_owned())
+    };
+    if let Some(zig) = prepared {
+        // Hermetic builders already provide the compiler and dependency tree.
+        if env::var_os("LIBGHOSTTY_VT_ZIG_SYSTEM_DIR").is_some() {
+            let cache = env::var_os("ZIG_GLOBAL_CACHE_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| out_dir.join("zig-global-cache"));
+            return (zig, cache);
+        }
+        args.extend(["--zig".to_owned(), zig]);
     }
-    for python in ["python3", "python"] {
+    // Python packaging supplies its build interpreter; direct Cargo builds use PATH.
+    let interpreters = match env::var_os("PYTHON_SYS_EXECUTABLE") {
+        Some(python) => vec![python],
+        None => vec!["python3".into(), "python".into()],
+    };
+    for python in interpreters {
         let output = match Command::new(python)
             .args(&args)
             .stderr(Stdio::inherit())
@@ -127,6 +145,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LIBGHOSTTY_VT_SIMD");
     println!("cargo:rerun-if-env-changed=LIBGHOSTTY_VT_ZIG_SYSTEM_DIR");
     println!("cargo:rerun-if-env-changed=ZIG");
+    println!("cargo:rerun-if-env-changed=ZIG_GLOBAL_CACHE_DIR");
+    println!("cargo:rerun-if-env-changed=PYTHON_SYS_EXECUTABLE");
     println!("cargo:rerun-if-changed=../../scripts/ensure_zig.py");
     println!("cargo:rerun-if-env-changed=LIBGHOSTTY_VT_WINDOWS_LIBC");
 
@@ -145,7 +165,7 @@ fn main() {
     let zig_prefix = out_dir.join("zig-out");
 
     let host = env::var("HOST").expect("HOST");
-    let (zig, zig_global_cache) = resolve_zig(&manifest_dir, &vendor_dir, &host);
+    let (zig, zig_global_cache) = resolve_zig(&manifest_dir, &vendor_dir, &host, &out_dir);
     let mut command = Command::new(&zig);
     command.env("ZIG_GLOBAL_CACHE_DIR", zig_global_cache);
     command

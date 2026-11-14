@@ -3,6 +3,7 @@
 //! Checks the hosted herdr.dev update manifest for newer versions.
 //! Manual `herdr update` downloads and installs the binary.
 //! Background checks only surface availability and release notes.
+//! ForeRSI-packaged builds delegate update discovery and replacement to uv/pip.
 //! Uses `curl` as a subprocess for HTTP — no additional Rust HTTP dependencies.
 //! JSON parsing uses serde_json (already in deps for persistence).
 
@@ -29,6 +30,8 @@ const HERDR_UPDATE_COMMAND: &str = "herdr update";
 const HOMEBREW_UPDATE_COMMAND: &str = "brew update && brew upgrade herdr";
 const MISE_UPDATE_COMMAND: &str = "mise upgrade herdr";
 const NIX_UPDATE_COMMAND: &str = "update through Nix";
+const FORE_RSI_UPDATE_GUIDANCE: &str =
+    "Update ForeRSI using uv or pip; the bundled terminal is updated with the application.";
 const MISE_INSTALLS_DIR_ENV: &str = "MISE_INSTALLS_DIR";
 const FAKE_UPDATE_VERSION_ENV: &str = "HERDR_FAKE_UPDATE_VERSION";
 const FAKE_UPDATE_NOTES_VERSION_ENV: &str = "HERDR_FAKE_UPDATE_NOTES_VERSION";
@@ -1984,6 +1987,9 @@ fn is_mise_managed_install() -> bool {
 }
 
 pub(crate) fn preview_channel_rejection_for_current_install() -> Option<&'static str> {
+    if crate::build_info::FORE_RSI_VERSION.is_some() {
+        return Some(FORE_RSI_UPDATE_GUIDANCE);
+    }
     let Ok(current_exe) = env::current_exe() else {
         return None;
     };
@@ -1993,6 +1999,9 @@ pub(crate) fn preview_channel_rejection_for_current_install() -> Option<&'static
 
 pub(crate) fn package_manager_channel_update_guidance_for_current_install() -> Option<&'static str>
 {
+    if crate::build_info::FORE_RSI_VERSION.is_some() {
+        return Some(FORE_RSI_UPDATE_GUIDANCE);
+    }
     if is_homebrew_managed_install() {
         Some("Use `brew update && brew upgrade herdr` to update Homebrew installs.")
     } else if is_mise_managed_install() {
@@ -2181,6 +2190,9 @@ fn preserve_preview_channel_for_install(
 
 /// Manual self-update command (`herdr update`).
 pub fn self_update(options: SelfUpdateOptions) -> Result<Version, String> {
+    if crate::build_info::FORE_RSI_VERSION.is_some() {
+        return Err(FORE_RSI_UPDATE_GUIDANCE.into());
+    }
     let channel = UpdateChannel::configured();
 
     if is_homebrew_managed_install() {
@@ -2425,6 +2437,10 @@ fn print_outdated_integration_notice_with_updated_binary(updated_exe: &Path) {
 /// Background update check: only surface availability and release notes.
 /// Runs in a background thread at startup.
 pub fn auto_update(events: tokio::sync::mpsc::Sender<crate::events::AppEvent>) {
+    // The enclosing application owns both the installed binary and update discovery.
+    if crate::build_info::FORE_RSI_VERSION.is_some() {
+        return;
+    }
     crate::logging::update_check_started();
     if let Ok(version) = env::var(FAKE_UPDATE_VERSION_ENV) {
         let version = version.trim();

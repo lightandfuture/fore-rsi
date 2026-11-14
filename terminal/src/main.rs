@@ -567,11 +567,15 @@ fn main() -> io::Result<()> {
     }
 
     if args.get(1).map(|s| s.as_str()) == Some("server") {
-        return server::headless::run_server();
+        return server::headless::run_server().inspect_err(|err| {
+            // Detached servers have no stderr; preserve fatal errors in their file log.
+            tracing::error!(err = %err, "headless server failed");
+        });
     }
 
     // Hidden client mode: connect to an existing server's client socket.
     if args.get(1).map(|s| s.as_str()) == Some("client") {
+        client::init_logging();
         let loaded_config = config::Config::load();
         exit_if_nested_disabled(&loaded_config.config);
         return client::run_client();
@@ -724,7 +728,10 @@ fn main() -> io::Result<()> {
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
         platform::begin_cli_output();
-        println!("herdr {}", crate::build_info::version());
+        match crate::build_info::FORE_RSI_VERSION {
+            Some(version) => println!("ForeRSI terminal {version}"),
+            None => println!("herdr {}", crate::build_info::version()),
+        }
         return Ok(());
     }
 

@@ -89,7 +89,7 @@ if (-not $ExePath) {
         if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
     } finally { Pop-Location }
     $targetRoot = if ($env:CARGO_TARGET_DIR) { [IO.Path]::GetFullPath($env:CARGO_TARGET_DIR, $repo) } else { Join-Path $repo 'target' }
-    $builtExe = Join-Path $targetRoot 'release/herdr.exe'
+    $builtExe = Join-Path $targetRoot 'release/_terminal.exe'
     $package = Join-Path $repo '.local/windows-input/cache/Microsoft.Windows.Console.ConPTY.nupkg'
     $stage = Join-Path $root 'package'
     Write-Host 'Staging the current binary with the pinned ConPTY runtime'

@@ -67,7 +67,7 @@
       apps = forAllSystems (system: {
         default = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/herdr";
+          program = lib.getExe self.packages.${system}.default;
           meta.description = "Run Herdr";
         };
       });

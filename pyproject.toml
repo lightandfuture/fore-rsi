@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools>=77", "setuptools-rust>=1.13,<2"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,13 +7,24 @@ name = "fore-rsi"
 version = "0.0.1"
 description = "An RSI framework for agent teams that explore, execute, and improve through feedback."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = "Apache-2.0"
-dependencies = ["tyro>=1.0.17,<2"]
+license-files = [
+    "LICENSE",
+    "terminal/LICENSE",
+    "terminal/vendor/libghostty-vt/LICENSE",
+    "terminal/vendor/portable-pty/LICENSE.md",
+]
+dependencies = ["loguru>=0.8,<1", "tyro>=1.0.17,<2"]
 
 [project.scripts]
-fore-rsi = "cli:main"
+fore-rsi = "fore_rsi.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["cli", "config"]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fore_rsi", "fore_rsi.*"]
+namespaces = false

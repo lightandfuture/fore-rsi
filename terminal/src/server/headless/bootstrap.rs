@@ -1,3 +1,5 @@
+use tracing::error;
+
 use super::*;
 
 /// Run the headless server. This is the entry point called from main.rs.
@@ -48,6 +50,7 @@ pub fn run_server() -> io::Result<()> {
     ) {
         Ok(server) => server,
         Err(err) if err.kind() == io::ErrorKind::AddrInUse => {
+            error!(err = %err, path = %api::socket_path().display(), "API socket is already in use");
             eprintln!("error: herdr server is already running");
             eprintln!("api socket: {}", api::socket_path().display());
             std::process::exit(1);
@@ -81,6 +84,7 @@ pub fn run_server() -> io::Result<()> {
         ) {
             Ok(server) => server,
             Err(err) if err.kind() == io::ErrorKind::AddrInUse => {
+                error!(err = %err, path = %client_socket_path().display(), "client socket is already in use");
                 eprintln!("error: herdr server is already running");
                 eprintln!("client socket: {}", client_socket_path().display());
                 std::process::exit(1);

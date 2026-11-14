@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
+
+include README_zh.md CONTRIBUTING.md CONTRIBUTING_zh.md
+recursive-include docs *.md
+recursive-include docs/assets *.png *.svg
+recursive-include tasks *.md
+include terminal/Cargo.toml terminal/Cargo.lock terminal/build.rs
+include terminal/rust-toolchain.toml terminal/.cargo/config.toml
+include terminal/scripts/ensure_zig.py
+include terminal/assets/sounds/*.mp3
+include terminal/docs/next/api/herdr-api.schema.json
+include terminal/skills/herdr/SKILL.md
+include terminal/distribution/install.ps1
+
+graft terminal/src
+graft terminal/crates
+graft terminal/tests
+graft terminal/vendor
+
+# Rebuild native artifacts from source instead of distributing local caches.
+prune terminal/vendor/libghostty-vt/.zig-cache
+prune terminal/vendor/libghostty-vt/zig-pkg
+global-exclude *.py[cod] .DS_Store _terminal _terminal.exe

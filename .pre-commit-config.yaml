@@ -33,7 +33,7 @@ repos:
     hooks:
       - id: fore-rsi-python-syntax
         name: ForeRSI Python syntax
-        entry: python3 -I -m compileall -q src terminal/scripts
+        entry: uv run --no-sync python -I -m compileall -q src terminal/scripts
         language: system
         files: \.(py|pyi)$
         pass_filenames: false

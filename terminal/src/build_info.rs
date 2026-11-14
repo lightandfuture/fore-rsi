@@ -2,6 +2,9 @@
 
 pub const BASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The application version is separate from terminal plugin/API compatibility.
+pub const FORE_RSI_VERSION: Option<&str> = option_env!("FORE_RSI_VERSION");
+
 pub fn channel() -> &'static str {
     non_empty(option_env!("HERDR_BUILD_CHANNEL")).unwrap_or("stable")
 }

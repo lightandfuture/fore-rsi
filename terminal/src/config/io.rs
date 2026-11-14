@@ -19,8 +19,11 @@ const KNOWN_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "worktrees",
 ];
 
+/// Select the owning product's directory for configuration and session data.
 pub fn app_dir_name() -> &'static str {
-    if cfg!(debug_assertions) {
+    if crate::build_info::FORE_RSI_VERSION.is_some() {
+        "fore-rsi"
+    } else if cfg!(debug_assertions) {
         "herdr-dev"
     } else {
         "herdr"

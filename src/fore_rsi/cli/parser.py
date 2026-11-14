@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""ForeRSI command-line entry point."""
+"""Parse and validate ForeRSI CLI inputs and report usage errors."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -10,7 +10,8 @@ from typing import Annotated
 
 import tyro
 
-from config import Config
+from fore_rsi.cli.validation import validate_config
+from fore_rsi.config import Config
 
 
 @dataclass
@@ -21,24 +22,17 @@ class _CommandLine:
 
 
 def parse_args(args: Sequence[str] | None = None) -> Config:
-    """Build a run configuration from command-line arguments."""
-    command = tyro.cli(
+    """Return validated configuration, or exit after help, version, or a usage error."""
+    command_line = tyro.cli(
         _CommandLine,
         prog="fore-rsi",
         description="Run agent teams with feedback-driven workflows.",
         args=args,
         config=(tyro.conf.DisallowNone, tyro.conf.FlagCreatePairsOff),
     )
-    if command.version:
+    if command_line.version:
         print(f"fore-rsi {version('fore-rsi')}")
         raise SystemExit(0)
-    return command.options
 
-
-def main(args: Sequence[str] | None = None) -> None:
-    parse_args(args)
-    raise SystemExit("Workflow execution is not implemented.")
-
-
-if __name__ == "__main__":
-    main()
+    validate_config(command_line.options)
+    return command_line.options

@@ -5,76 +5,200 @@
   </picture>
 </h1>
 
-<p align="center">基于 Agent Team 的 RSI 框架：并行探索方案、执行工作、验证效果，并以反馈驱动持续改进。</p>
+<p align="center">基于 Agent Team 的 RSI 框架，自主并行探索方案、执行工作、验证效果，并以反馈驱动持续改进。</p>
 
 <p align="center"><a href="README.md">English</a> · 简体中文</p>
 
-ForeRSI 是一个递归自我改进（Recursive Self-Improvement，RSI）框架，目标是把用户的目标与约束转化为持续、可验证的工作。Agent Team 探索不同方案、协作执行，并通过证据改进结果和工作方法。
+ForeRSI 是一个基于 Agent Team 的递归自我改进（Recursive Self-Improvement，RSI）框架。设定目标与约束后，Agent Team 可以自主并行探索方案、协作执行工作、验证效果，并根据反馈调整方案和工作方法，持续推进迭代。
 
-长期优化与研究需要反复提出方案、实现、测量和比较结果，人往往还要不断交接工作、追踪进展、整理证据。ForeRSI 希望把持续迭代交给团队，让人专注于目标、约束和评估。
+ForeRSI 采用去中心化协作理念：Agent 成员直接交流与共享进展，减少信息转发瓶颈，提升并行度，让独立工作持续推进。
 
-ForeRSI 采用去中心化协作理念：Agent 成员直接交流与共享进展，减少信息转发瓶颈，让独立工作并行推进。用户提供目标、材料、约束、可用资源与时间预算，workflow 据此组织团队。
-
-Workflow 与 UI 各自承担明确职责：
-
-- **Workflow** 负责任务输入，定义 Agent 角色、协作与交接规则、调度及任务推进方式，并选择执行 Agent 工作的后端 harness。
-- **UI** 通过 Herdr 及其命名展示会话，向用户呈现团队进展与结果。
-
-**当前阶段：** Python CLI 已能将参数解析为一份完整配置，workflow 执行与 Herdr UI 尚未接通。`--help` 和 `--version` 可用，任务命令目前会以一条尚未实现的提示退出；下文描述了系统的设计目标。
+用户提供目标、材料、约束、可用资源与时间预算，工作流据此组织团队。命令行用法与开发指南见[文档](docs/README.md)。
 
 ## 快速开始
 
 ### 安装
 
-需要 Python 3.10 或更高版本。在仓库根目录执行：
+使用 [uv](https://docs.astral.sh/uv/) 安装，自动准备 Python 3.13 运行环境：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+uv tool install --python 3.13 fore-rsi
 ```
 
-使用 `fore-rsi` 时保持环境激活。运行 `fore-rsi --help` 查看可用参数。
+<details>
+<summary>使用 pip 安装</summary>
+
+在 Python 3.13 或更高版本的环境中执行：
+
+```bash
+pip install fore-rsi
+```
+
+</details>
+
+<details>
+<summary>从源码进行可编辑安装</summary>
+
+源码构建需要 [Rustup](https://rustup.rs/) 和系统 C/C++ 构建工具。安装时会自动准备所需的 Rust 与 Zig 工具链，并编译内置终端。
+
+在 ForeRSI 仓库根目录执行，uv 会自动管理 Python 环境：
+
+```bash
+uv tool install --python 3.13 -e .
+```
+
+可编辑安装直接引用本地 Python 源码，无需激活虚拟环境。
+
+也可以在项目虚拟环境中使用 pip：
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+使用 pip 安装时，运行 `fore-rsi` 前需激活该环境。
+
+</details>
+
+<details>
+<summary>更新或卸载</summary>
+
+使用 uv 安装发布版时：
+
+```bash
+# 更新
+uv tool upgrade fore-rsi
+
+# 卸载
+uv tool uninstall fore-rsi
+```
+
+使用 pip 安装发布版时：
+
+```bash
+# 更新
+pip install --upgrade fore-rsi
+
+# 卸载
+pip uninstall fore-rsi
+```
+
+源码安装的依赖、原生代码或构建配置变更后，在仓库根目录重新安装：
+
+```bash
+uv tool install --python 3.13 --reinstall -e .
+```
+
+使用 pip 可编辑安装时，在原环境中执行 `pip install -e .`。卸载命令与发布版相同。
+
+更新后，[停止并重新启动现有会话](#停止会话)以应用变更。卸载前先停止运行中的会话；已保存的会话数据会保留。
+
+</details>
+
+<details>
+<summary>使用网络代理</summary>
+
+需要代理时，在安装或运行命令前设置以下变量。将示例中的 `http://127.0.0.1:7890` 替换为实际 HTTP 代理地址：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1,::1
+```
+
+</details>
+
+### 选择工作流并启动
+
+工作流定义团队角色、协作方式与执行步骤。内置的 `default` 用于通用任务的探索、执行与验证，`inference` 用于推理系统的性能优化与评测。省略 `--workflow` 时使用 `default`。
+
+在希望处理的项目目录中启动。`fore-rsi` 默认执行 `run`，也可以写成 `fore-rsi run`。下面选择 `inference` 工作流，通过 `--harness pi` 使用 Pi 执行 Agent，并通过 `--session` 将会话命名为 `sglang-throughput`：
+
+```bash
+fore-rsi --workflow inference \
+  --harness pi \
+  --session sglang-throughput
+```
+
+也可以根据任务需要[定制 RSI 工作流](#设计你的定制-rsi-工作流)，调整团队角色、工具、执行步骤与评价标准。参数说明见 [CLI 参考](docs/cli.md)，或运行 `fore-rsi --help`。
 
 ### 提供任务
 
-在 Markdown 文件中描述目标、约束、可用资源，以及判断结果所需的证据。仓库提供了一个 [SGLang 吞吐优化任务](tasks/inference-optimization/sglang-throughput.md)：
+可以直接在终端对话中描述任务，也可以在启动时通过 `--task` 传入 Markdown 文件。
+
+进入界面后，向 Coordinator（协调者）说明目标、约束、可用资源、时间预算与预期交付。例如：
+
+> 优化 SGLang 上的 BF16 Qwen3.5-35B-A3B，在请求并发为 1 和 16 时提高输出 token 吞吐量、降低每个输出 token 的耗时（TPOT），并保持回答质量。单机最多使用两张 NVIDIA A100，时间预算为 24 小时。
+>
+> 团队并行度：4 个 Explorer、4 个 Worker、2 个 Verifier。
+
+如果已经写好任务文件，可以在启动时一并提供。例如，在 ForeRSI 仓库根目录运行 [SGLang 吞吐优化任务](tasks/inference-optimization/sglang-throughput.md)：
 
 ```bash
-fore-rsi --task tasks/inference-optimization/sglang-throughput.md
+fore-rsi --workflow inference \
+  --harness pi \
+  --session sglang-throughput \
+  --task tasks/inference-optimization/sglang-throughput.md
 ```
 
-只需提供需要设置的参数。`--workflow` 选择工作流，`--harness` 选择其执行后端，`--session` 指定 Herdr 展示会话的名称。各参数的含义见 [CLI 参考](docs/cli.md)。
+使用自己的任务时，将路径替换为实际文件路径。相对路径以运行命令时的工作目录为基准。两种方式都可以在后续对话中继续补充材料或调整要求。
+
+### 退出与重新连接
+
+暂时离开时，可以直接关闭终端窗口，或按 `Ctrl+B`，松开后再按 `q` 退出界面。后台会话与其中的 Agent 仍然会继续运行。
+
+列出本地会话及其运行状态：
+
+```bash
+fore-rsi list
+```
+
+按名称重新连接会话：
+
+```bash
+fore-rsi --session sglang-throughput
+```
+
+重新连接已有会话时，无需重复传入 `--task`。需要暂停或结束任务时，在 Coordinator 对话中提出要求。
+
+### 停止会话
+
+结束整个后台会话，以及其中的工作流、Agent 和其他窗格进程：
+
+```bash
+fore-rsi stop --session sglang-throughput
+```
+
+已保存的会话数据会保留。需要再次启动时，运行 `fore-rsi --session sglang-throughput`。
 
 ## 持续改进循环
 
 <p align="center">
-  <img src="docs/assets/improvement-loop_zh.svg" alt="Agent Team 探索、执行与验证，Watchdog 监督协作，人类与 Agent 通过独立维护任务改进 ForeRSI。" width="564">
+  <img src="docs/assets/improvement-loop_zh.png" alt="Agent Team 探索、执行与验证，反馈驱动下一轮；Watchdog 监督整个任务循环并提醒成员；人类与 Agent 改进任务循环和 Watchdog。" width="720">
 </p>
 
 ### 任务迭代
 
 1. 探索方案：围绕目标与约束，分析已有材料、比较可行路径，形成可执行方案。
 2. 执行工作：落实方案，产出代码、配置、分析、文档等可供验证的结果。
-3. 验证效果：通过测试、测量、模拟或人工评阅取得证据，对照目标评估结果，决定保留或调整。
+3. 验证效果：通过测试、测量、模拟或人工评阅取得反馈，对照目标与约束评估结果，决定保留或调整。
 
-反馈回到探索与执行，指导下一轮改进。探索阶段也可以直接请求反馈。在这一工作流中，Coordinator 对接用户要求与任务进展，Checker 负责方案、工作和结论的阶段检查。
+反馈回到探索与执行，指导下一轮改进。探索阶段也可以直接请求反馈。
 
-用户通过 Coordinator 补充材料、调整要求，以及暂停或恢复任务。
+Coordinator（协调者）对接用户要求与任务进展，Checker（检查者）负责方案、工作和结论的阶段检查。用户通过 Coordinator 补充要求与材料，调整任务方向。
 
-### Watchdog：改进团队协作
+### Watchdog：监督与提醒
 
-Watchdog（看门狗）定期巡查任务进展和团队协作，识别停滞、重复尝试与交接问题，并跟进相关成员的处理。它关注工作流能否有效推进任务，并总结可复用的经验。
+Watchdog（看门狗）定期巡查任务进展和团队协作，识别停滞、重复尝试与交接问题，向相关成员发出提醒并跟进处理。它关注整个流程能否有效推进任务，并总结可复用的工作经验。
 
-### 人类与 Agent：改进 ForeRSI
+### 人类与 Agent：改进任务循环与 Watchdog
 
-人类与 Agent 根据任务经验和 Watchdog 反馈，共同改进工作流与支撑框架。协作规则、提示词、工具、调度、恢复机制及 harness 接入的改进作为独立维护任务开展，验证后再应用于后续工作。
+人类与 Agent 根据任务经验和 Watchdog 反馈，分别改进任务循环和 Watchdog 的监督与提醒机制。这些改进经过设计、实现与验证后，应用于后续任务。
 
 ## 设计你的定制 RSI 工作流
 
-工作流定义团队角色、工具、执行步骤和交接规则，可以携带领域提示词、参考资料、工作方法和评价标准，并决定如何根据任务要求配置团队及其 harness。
-
-同一套持续改进循环可以服务于不同领域：
+工作流定义团队角色、工具、执行步骤和交接规则，也可以携带领域提示词、参考资料、专业知识、工作方法和评价标准。根据任务需要组织团队，让持续改进循环服务于不同领域：
 
 - 软件开发：迭代实现功能或算法，通过测试与反馈改进。
 - 推理优化：优化 Foretoken、SGLang、vLLM 等推理系统的代码、配置与运行表现。
@@ -82,7 +206,7 @@ Watchdog（看门狗）定期巡查任务进展和团队协作，识别停滞、
 
 ## 贡献
 
-欢迎参与 ForeRSI。开发与验证方式见[贡献指南](CONTRIBUTING_zh.md)，参考资料见[文档](docs/README.md)。
+欢迎参与 ForeRSI。开发环境、验证方式与 Pull Request 流程见[贡献指南](CONTRIBUTING_zh.md)。
 
 感谢所有通过代码、文档、想法和反馈帮助 ForeRSI 改进的[贡献者](https://github.com/shiweijiezero/fore-rsi/graphs/contributors)。
 

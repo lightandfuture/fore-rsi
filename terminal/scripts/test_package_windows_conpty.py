@@ -17,7 +17,7 @@ from scripts import package_windows_conpty as package
 
 class WindowsConptyPackageTests(unittest.TestCase):
     def test_local_build_installs_beside_cargos_reported_executable(self) -> None:
-        executable = Path("other-target/x86_64-pc-windows-msvc/release/herdr.exe")
+        executable = Path("other-target/x86_64-pc-windows-msvc/release/_terminal.exe")
         cargo = mock.MagicMock()
         cargo.__enter__.return_value = cargo
         cargo.stdout = io.StringIO(
@@ -25,7 +25,7 @@ class WindowsConptyPackageTests(unittest.TestCase):
                 {
                     "reason": "compiler-artifact",
                     "manifest_path": str(package.PROJECT_ROOT / "Cargo.toml"),
-                    "target": {"name": "herdr", "kind": ["bin"]},
+                    "target": {"name": "_terminal", "kind": ["bin"]},
                     "executable": str(executable),
                 }
             )

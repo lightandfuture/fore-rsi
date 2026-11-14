@@ -3,23 +3,19 @@
 ## Task requirements
 
 - Target model: `Qwen/Qwen3.5-35B-A3B`. [Fixed]
-- Inference engine: SGLang, using the MetaX-compatible environment supplied for the task. [Fixed]
+- Inference engine: SGLang, using the CUDA environment supplied for the task. [Fixed]
 - Optimization objectives: increase aggregate output throughput (tokens/s) and reduce mean time per output token (TPOT, ms/token) at request concurrency 1 and 16. Report each concurrency separately. [Fixed]
 - Precision: BF16. [Fixed]
 - Starting configuration: two-way tensor parallelism (TP2) and a 262,144-token context. Parallelism, context length, cache settings, and stage placement may change while preserving the evaluation workloads and fixed requirements.
-- Final deployment budget: at most 2 MetaX C500 GPUs on one host. Target-model, auxiliary-model, and frontend workloads together must stay within 32 CPU cores and 250G host memory, counted from their container resource limits. [Fixed]
+- Final deployment budget: at most 2 NVIDIA A100 GPUs on one host. Target-model, auxiliary-model, and frontend workloads together must stay within 32 CPU cores and 250G host memory, counted from their container resource limits. [Fixed]
 - Experiment sizing: service candidates must fit the final deployment budget. Kernel, compilation, and correctness experiments may use fewer resources, including one GPU.
-- Available resources: at most 4 MetaX GPUs across all experiments. Schedule CPU, memory, and storage within actual host capacity and the cluster, namespace, and host access provided at task startup. [Fixed]
+- Available resources: at most 4 NVIDIA A100 GPUs across all experiments. Schedule CPU, memory, and storage within actual host capacity and the cluster, namespace, and host access provided at task startup. [Fixed]
 - Allowed changes: implementation and configuration at any layer within the fixed requirements and authorized resources, including algorithms, auxiliary models and their weights, and execution layout.
 - Work duration: a total budget of 24 hours from the start of task execution. [Fixed]
 
 ## Agent team
 
-- 4 Explorers investigate bottlenecks, compare approaches, and propose experiments.
-- 4 Workers implement selected approaches.
-- 2 Verifiers deploy candidates, measure performance, and check correctness and answer quality.
-- Coordinator and Checker use the workflow's role settings. The Watchdog reviews progress and handoffs every hour.
-- Use the harness, model, and reasoning settings assigned to each role for this task. Unspecified execution settings inherit the Coordinator's current settings.
+4 Explorers, 4 Workers, 2 Verifiers.
 
 ## Deployment and measurement
 
@@ -36,9 +32,9 @@ Initialize these values once in the task's working directory, before switching t
 
 ```bash
 export MODEL_ID="Qwen/Qwen3.5-35B-A3B"
-export RESULTS_DIR="$PWD/results/qwen3.5-35b-a3b-sglang-c500"
+export RESULTS_DIR="$PWD/results/qwen3.5-35b-a3b-sglang-a100"
 export WANDB_PROJECT="fore-rsi-inference"
-export WANDB_GROUP="qwen35-sglang-c500-bf16"
+export WANDB_GROUP="qwen35-sglang-a100-bf16"
 ```
 
 Measurements use the Foretoken CLI against SGLang's OpenAI-compatible endpoint. The benchmark client must have access to the model's tokenizer and the selected datasets.

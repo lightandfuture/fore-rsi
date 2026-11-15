@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Locate the bundled terminal and run its non-interactive control commands."""
+"""Locate the bundled terminal and execute its asynchronous control commands."""
 
+import asyncio
 from importlib.metadata import distribution
 import json
 from pathlib import Path
@@ -12,28 +13,40 @@ from typing import Any
 from fore_rsi.config import Config
 
 
-def run_terminal(
+async def run_terminal(
     arguments: list[str], session: str | None = None, *, capture_output: bool = False
-) -> None:
-    """Run a control command, optionally retaining its diagnostics for the caller's error handler."""
-    subprocess.run(
-        terminal_command(arguments, session),
-        stdin=subprocess.DEVNULL,
-        capture_output=capture_output,
-        text=True,
-        check=True,
+) -> subprocess.CompletedProcess[str]:
+    """Return a successful command result, preserving diagnostics on failure and reaping on cancellation."""
+    command = terminal_command(arguments, session)
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE if capture_output else None,
+        stderr=asyncio.subprocess.PIPE if capture_output else None,
     )
+    try:
+        stdout, stderr = await process.communicate()
+    except BaseException:
+        # Control clients do not own a terminal. Cancel their process and drain
+        # captured pipes before returning control to the caller.
+        if process.returncode is None:
+            process.kill()
+        await process.communicate()
+        raise
+
+    result = subprocess.CompletedProcess(
+        command,
+        await process.wait(),
+        stdout.decode("utf-8") if stdout is not None else None,
+        stderr.decode("utf-8") if stderr is not None else None,
+    )
+    result.check_returncode()
+    return result
 
 
-def query_terminal(arguments: list[str], session: str | None = None) -> dict[str, Any]:
-    """Return a native JSON response for workflow orchestration without taking terminal input."""
-    result = subprocess.run(
-        terminal_command(arguments, session),
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+async def query_terminal(arguments: list[str], session: str | None = None) -> dict[str, Any]:
+    """Return a native JSON response without taking terminal input or blocking the event loop."""
+    result = await run_terminal(arguments, session, capture_output=True)
     return json.loads(result.stdout)
 
 

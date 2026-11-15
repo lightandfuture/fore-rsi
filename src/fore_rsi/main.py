@@ -3,6 +3,7 @@
 
 """ForeRSI application startup shared by installed and module entry points."""
 
+import asyncio
 from collections.abc import Sequence
 from typing import cast
 
@@ -13,28 +14,31 @@ from fore_rsi.ui.launch_ui import create_ui
 from fore_rsi.ui.tui.app import delete_session, list_sessions
 
 
-def main(args: Sequence[str] | None = None) -> None:
-    """Dispatch session commands and coordinate UI and workflow startup and shutdown."""
+async def main(args: Sequence[str] | None = None) -> None:
+    """Dispatch session commands and supervise workflow execution alongside the foreground UI."""
     config = parse_args(args)
     setup_logging(config.logging)
 
     match config.session_action:
         case "list":
-            list_sessions()
+            await list_sessions()
             return
         case "delete":
-            delete_session(cast(str, config.ui.session))
+            await delete_session(cast(str, config.ui.session))
             return
 
-    ui = create_ui(config)
-    workflow = create_workflow(config)
+    ui_runner = create_ui(config)
+    workflow_runner = create_workflow(config)
 
     try:
-        ui.start()
-        workflow.start()
-        ui.wait()
+        await ui_runner.start()
+        async with asyncio.TaskGroup() as tasks:
+            workflow_task = tasks.create_task(workflow_runner.run(), name="workflow")
+            try:
+                await ui_runner.wait()
+            finally:
+                # Request cancellation before leaving the group, which waits
+                # for the workflow's own shutdown and persistence to finish.
+                workflow_task.cancel()
     finally:
-        try:
-            workflow.close()
-        finally:
-            ui.close()
+        await ui_runner.close()

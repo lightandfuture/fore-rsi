@@ -159,6 +159,10 @@ fn channel_command() -> Command {
 fn server_command() -> Command {
     let command = Command::new("server")
         .about("Run or control the headless server")
+        .subcommand(
+            Command::new("start")
+                .about("Start or reuse a background server without opening a terminal"),
+        )
         .subcommand(super::server::live_handoff_command())
         .subcommand(Command::new("stop").about("Stop the running server"))
         .subcommand(Command::new("reload-config").about("Reload config in the running server"))

@@ -1,77 +1,67 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Adapt ForeRSI session operations to the bundled native terminal."""
+"""Own startup, waiting, and cleanup for the foreground terminal client."""
 
-from importlib.metadata import distribution
 import os
-from pathlib import Path
+import signal
 import subprocess
 
-from loguru import logger
-
 from fore_rsi.config import UIConfig
+from fore_rsi.utils.terminal import run_terminal, terminal_command
 
 
-def run_tui(config: UIConfig) -> int:
-    """Run the terminal interface for the UI launcher and return its exit status.
+class TuiApp:
+    """Manage the foreground client; the application coordinates workflow shutdown separately."""
 
-    The native client owns terminal setup and restoration. Leaving the interface
-    keeps the native background session and its pane processes running.
-    """
-    return _run_terminal([], config.session, lifecycle_level="INFO")
+    def __init__(self, config: UIConfig) -> None:
+        """Keep the UI configuration without starting a server or client process."""
+        self._config = config
+        self._client: subprocess.Popen[bytes] | None = None
 
+    def start(self) -> None:
+        """Prepare the native session and launch one client without waiting for it to exit."""
+        if self._client is not None:
+            raise RuntimeError("The terminal interface has already been started.")
 
-def list_sessions() -> int:
-    """Print native session names and status for the UI dispatcher without attaching."""
-    return _run_terminal(["session", "list"])
+        # Headless preparation leaves workspace creation to the workflow and
+        # completes before the client and workflow access the same server.
+        run_terminal(["server", "start"], self._config.session, capture_output=True)
+        command = terminal_command([], self._config.session)
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        self._client = subprocess.Popen(command, creationflags=creationflags)
 
+    def wait(self) -> None:
+        """Wait for the foreground client and propagate a nonzero exit to the application."""
+        if self._client is None:
+            raise RuntimeError("The terminal interface has not been started.")
 
-def stop_session(config: UIConfig) -> int:
-    """Stop the selected native session and its panes while retaining saved session data."""
-    return _run_terminal(["server", "stop"], config.session)
+        returncode = self._client.wait()
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, self._client.args)
 
+    def close(self) -> None:
+        """Close and reap the foreground client; safe before startup and after an earlier close."""
+        client = self._client
+        if client is None:
+            return
 
-def _run_terminal(
-    arguments: list[str], session: str | None = None, *, lifecycle_level: str = "DEBUG"
-) -> int:
-    """Run a native command, keeping routine command diagnostics below normal output."""
-    command = [str(_terminal_executable())]
-    if session is not None:
-        command.extend(["--session", session])
-    command.extend(arguments)
-
-    logger.debug("Launching native terminal command", executable=command[0], arguments=arguments)
-    # Inherit the terminal and foreground process group. On interruption, let
-    # the native client restore terminal modes rather than killing it.
-    with subprocess.Popen(command) as client:
-        terminal_logger = logger.bind(child_pid=client.pid)
-        terminal_logger.log(lifecycle_level, "Native terminal process started")
-        try:
-            returncode = client.wait()
-        except KeyboardInterrupt:
-            terminal_logger.info("Interrupted; waiting for the native terminal process to exit")
-            client.wait()
-            exit_code = 130
-        else:
-            exit_code = returncode if returncode >= 0 else 128 - returncode
-
-    terminal_logger.log(
-        lifecycle_level if exit_code in (0, 130) else "ERROR",
-        "Native terminal process exited",
-        exit_code=exit_code,
-    )
-    return exit_code
+        if client.poll() is None:
+            # Native termination handling restores terminal modes. On Windows,
+            # the separate process group directs Ctrl+Break only to this client.
+            if os.name == "nt":
+                client.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                client.terminate()
+        client.wait()
+        self._client = None
 
 
-def _terminal_executable() -> Path:
-    """Locate the private executable recorded by the Python package installer."""
-    package = distribution("fore-rsi")
-    filename = "_terminal.exe" if os.name == "nt" else "_terminal"
-    for record in package.files or ():
-        if record.parts[-3:] == ("libexec", "fore-rsi", filename):
-            return Path(package.locate_file(record))
+def list_sessions() -> None:
+    """Print native session names and status for the command dispatcher without attaching."""
+    run_terminal(["session", "list"])
 
-    raise FileNotFoundError(
-        "The ForeRSI installation does not include its terminal executable. Reinstall ForeRSI."
-    )
+
+def delete_session(name: str) -> None:
+    """Delete a stopped named session's native-owned data without removing project files."""
+    run_terminal(["session", "delete", name])

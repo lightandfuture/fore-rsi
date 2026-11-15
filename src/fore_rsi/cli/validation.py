@@ -23,3 +23,7 @@ def validate_config(config: Config) -> None:
     if config.session_action == "list" and config.ui.session is not None:
         print("fore-rsi: list does not accept --session.", file=sys.stderr)
         raise SystemExit(2)
+
+    if config.session_action == "delete" and config.ui.session is None:
+        print("fore-rsi: delete requires --session NAME.", file=sys.stderr)
+        raise SystemExit(2)

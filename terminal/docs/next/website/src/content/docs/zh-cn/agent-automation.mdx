@@ -43,7 +43,9 @@ review_pane=$(printf '%s\n' "$split" | jq -r '.result.pane.pane_id')
 
 `--kind` 选择受支持的智能体及其标准可执行文件。支持的 kind 是 `pi`、`claude`、`codex`、`gemini`、`cursor`、`devin`、`agy`、`cline`、`omp`、`mastracode`、`opencode`、`copilot`、`kimi`、`kiro`、`droid`、`amp`、`grok`、`hermes`、`kilo`、`qodercli`、`qwen`、`letta`、`maki` 和 `muse`。`--` 后的参数会原样传给该可执行文件。
 
-成功的 `agent start` 只有在 Herdr 于同一终端检测到预期智能体,并确认它可接受交互输入后才返回。如果启动期间检测到 `blocked`,命令会立即返回 `agent_not_ready`。该名称仍可用于 `agent read` 和 `agent send-keys`,检测变为 `idle` 后即可用于发送提示。默认等待启动 30 秒;`--timeout` 必须大于 3000 且不超过 300000 毫秒。
+默认情况下，`agent start` 在 Herdr 于同一终端检测到预期智能体、确认它可以接受交互输入后返回；已经开始执行初始任务的智能体也视为启动成功。如果启动期间检测到 `blocked`，命令会立即返回 `agent_not_ready`。该名称仍可用于 `agent read` 和 `agent send-keys`，完成阻塞交互后即可发送提示。默认等待启动 30 秒；`--timeout` 必须大于 3000 且不超过 300000 毫秒。
+
+使用 `--no-wait` 可以在运行内核接受启动请求后返回。随后连接终端，查看启动过程并处理登录或审批提示。
 
 ```bash
 herdr agent start reviewer --kind codex --pane "$review_pane" -- -m gpt-5.4

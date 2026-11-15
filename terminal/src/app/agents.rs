@@ -382,7 +382,11 @@ impl App {
         Some(crate::api::schema::AgentInfo {
             terminal_id: pane.terminal_id,
             name: terminal.agent_name.clone(),
-            agent: pane.agent,
+            agent: pane.agent.or_else(|| {
+                terminal
+                    .managed_agent_kind()
+                    .map(|kind| crate::detect::agent_label(kind).to_string())
+            }),
             title: pane.title,
             terminal_title: pane.terminal_title,
             terminal_title_stripped: pane.terminal_title_stripped,

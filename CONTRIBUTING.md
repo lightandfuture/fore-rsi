@@ -12,15 +12,7 @@ uv tool install --python 3.13 -e .
 
 Changes under `src/` are used by the `fore-rsi` command without activating a virtual environment. Other installation options are in the [README](README.md#install).
 
-## Configuration and execution
-
-- [src/fore_rsi/config.py](src/fore_rsi/config.py) defines `Config`, `WorkflowConfig`, `UIConfig`, and `LoggingConfig`. Task and harness settings belong to `WorkflowConfig`; the ForeRSI session name belongs to `UIConfig`.
-- [src/fore_rsi/cli/](src/fore_rsi/cli/) separates tyro argument parsing from option-combination validation. The parser invokes validation and returns one complete, validated `Config`; it also handles help, version output, and usage errors. Keep option names, defaults, types, and help with the configuration definitions.
-- [src/fore_rsi/main.py](src/fore_rsi/main.py) is the shared application entry point. Both the installed `fore-rsi` command and `python -m fore_rsi` call its `main()` function, which receives validated configuration, initializes diagnostics, and delegates session operations to [ui/launch_ui.py](src/fore_rsi/ui/launch_ui.py).
-
-Keep configuration as data. The CLI handles argument conversion; the workflow owns business validation, agent roles, scheduling, and management rules, harnesses execute agents, and the terminal UI displays progress and results. Avoid maintaining a second list of field types or a separate handler for each option.
-
-Use `from loguru import logger` for Python diagnostics. Keep command results and parse-time usage errors on their CLI streams. Configure [logging.py](src/fore_rsi/logging.py) from the application entry point; Loguru closes synchronous sinks at process exit. Bind task and agent context with Loguru's `bind()` or `contextualize()`; independently launched processes use separate log files. Conversations and experiment results stay with their respective recording modules.
+Use `from loguru import logger` for Python diagnostics. Keep command results and parse-time usage errors on their CLI streams. Configure [logging.py](src/fore_rsi/logging.py) from the application entry point; Loguru closes synchronous sinks at process exit. Independently launched processes use separate log files. Conversations and experiment results stay with their respective recording modules.
 
 The CLI reads the installed version through `importlib.metadata`; [pyproject.toml](pyproject.toml) is the source for package version metadata.
 

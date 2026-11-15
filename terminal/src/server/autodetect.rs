@@ -200,8 +200,9 @@ fn validate_running_server_compatibility(saved_federation: bool) -> io::Result<(
 ///   socket overrides, etc.), except inherited socket overrides are cleared when
 ///   this CLI invocation explicitly selected a session.
 ///
-/// Returns the PID of the spawned server process.
-pub fn spawn_server_daemon() -> io::Result<u32> {
+/// Returns the PID of the spawned server process. Terminal clients seed an
+/// initial workspace; headless callers can create their own workspaces instead.
+pub fn spawn_server_daemon(seed_workspace: bool) -> io::Result<u32> {
     let exe = std::env::current_exe().map_err(|err| {
         io::Error::new(
             err.kind(),
@@ -212,6 +213,9 @@ pub fn spawn_server_daemon() -> io::Result<u32> {
     info!(exe = %exe.display(), "spawning server daemon");
 
     let mut command = build_server_daemon_command(exe);
+    if !seed_workspace {
+        command.env_remove(STARTUP_CWD_ENV_VAR);
+    }
 
     let pid =
         crate::platform::launch_server_daemon_command(&mut command).map_err(|err: io::Error| {
@@ -292,6 +296,27 @@ pub fn wait_for_server_socket(socket_path: &Path, timeout: Duration) -> io::Resu
 // Auto-detect launch
 // ---------------------------------------------------------------------------
 
+/// Prepare a server for terminal clients or headless orchestration callers.
+/// Reuse the existing daemon and wait for readiness when a daemon must be started.
+pub(crate) fn ensure_server_running(
+    saved_federation: bool,
+    seed_workspace: bool,
+) -> io::Result<()> {
+    let socket_path = client_socket_path();
+    if is_server_listening()? {
+        info!("server already running");
+        if saved_federation {
+            Ok(())
+        } else {
+            validate_running_server_compatibility(false)
+        }
+    } else {
+        info!("no server running, spawning server daemon");
+        spawn_server_daemon(seed_workspace)?;
+        wait_for_server_socket(&socket_path, SERVER_READY_TIMEOUT)
+    }
+}
+
 /// Performs auto-detect launch: check for server, spawn if needed, then
 /// attach as a thin client.
 ///
@@ -315,20 +340,7 @@ pub fn auto_detect_launch(saved_federation: bool) -> io::Result<()> {
     let socket_path = client_socket_path();
     info!(path = %socket_path.display(), "auto-detect launch starting");
 
-    let startup = is_server_listening().and_then(|listening| {
-        if listening {
-            info!("server already running, attaching as client");
-            if saved_federation {
-                Ok(())
-            } else {
-                validate_running_server_compatibility(false)
-            }
-        } else {
-            info!("no server running, spawning server daemon");
-            spawn_server_daemon()
-                .and_then(|_| wait_for_server_socket(&socket_path, SERVER_READY_TIMEOUT))
-        }
-    });
+    let startup = ensure_server_running(saved_federation, true);
     if let Err(error) = startup {
         if !saved_federation {
             tracing::error!(%error, "local server startup failed");

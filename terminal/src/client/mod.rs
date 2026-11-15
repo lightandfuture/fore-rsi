@@ -178,6 +178,16 @@ fn run_client_with_mode(
     attach_escape: Option<AttachEscapeState>,
     log_message: &'static str,
 ) -> io::Result<()> {
+    // Register termination before entering raw mode so a foreground owner can
+    // close the client during initialization and still restore its terminal.
+    let should_quit = Arc::new(AtomicBool::new(false));
+    let quit_flag = should_quit.clone();
+    if let Err(err) = ctrlc::set_handler(move || {
+        quit_flag.store(true, Ordering::Release);
+    }) {
+        warn!(%err, "failed to install termination handler; terminal restore relies on TerminalGuard::Drop and the panic hook");
+    }
+
     let loaded_config = crate::config::Config::load();
     // Windows may not have virtual terminal processing enabled until the rendered
     // client initializes the terminal, so defer the host mouse reset to
@@ -344,17 +354,6 @@ fn run_client_with_mode(
         .enable_all()
         .build()
         .map_err(io::Error::other)?;
-
-    let should_quit = Arc::new(AtomicBool::new(false));
-
-    // ctrlc's "termination" feature also catches SIGTERM/SIGHUP so direct
-    // termination signals still run the quit path and TerminalGuard::Drop.
-    let quit_flag = should_quit.clone();
-    if let Err(err) = ctrlc::set_handler(move || {
-        quit_flag.store(true, Ordering::Release);
-    }) {
-        warn!(%err, "failed to install termination handler; terminal restore relies on TerminalGuard::Drop and the panic hook");
-    }
 
     let result = rt.block_on(async {
         run_client_loop(

@@ -92,7 +92,7 @@ uv tool install --python 3.13 --reinstall -e .
 
 For a pip editable installation, run `pip install -e .` in the original environment. Use the same uninstall commands as for a published release.
 
-After updating, [stop and restart existing sessions](#stop-a-session) to apply the changes. Stop running sessions before uninstalling; saved session data is retained.
+[Exit ForeRSI](#exit-and-resume) before updating or uninstalling. After updating, resume a saved session to use the new version. Uninstalling retains saved session data.
 
 </details>
 
@@ -144,33 +144,33 @@ fore-rsi --workflow inference \
 
 Replace the path with your own task file as needed. Relative paths are resolved from the directory where you run the command. With either input method, you can continue sharing materials and refining requirements in the conversation.
 
-### Leave and reconnect
+### Exit and resume
 
-To leave the interface, close the terminal window, or press `Ctrl+B`, release it, then press `q`. The background session and its agents keep running.
+Press `Ctrl+B`, release it, then press `q`, or close the terminal window. Exiting stops the workflow and its managed agents and tasks, while keeping session state and conversation history for recovery. Inside an agent conversation, `Ctrl+C` interrupts the current turn.
 
-List local sessions and their running status:
+List local sessions and their running or stopped status:
 
 ```bash
 fore-rsi list
 ```
 
-Reconnect to a session by name:
+Resume a saved session by name:
 
 ```bash
 fore-rsi --session sglang-throughput
 ```
 
-You do not need to pass `--task` again when reconnecting to an existing session. To pause or end the task, ask the Coordinator in the conversation.
+The session resumes its saved workflow and task progress. You do not need to pass `--task` again.
 
-### Stop a session
+### Delete a session
 
-Stop the background session and all workflows, agents, and other pane processes running inside it:
+Delete a stopped named session when you no longer need to resume it:
 
 ```bash
-fore-rsi stop --session sglang-throughput
+fore-rsi delete --session sglang-throughput
 ```
 
-Saved session data is retained. Run `fore-rsi --session sglang-throughput` to start the session again.
+This permanently removes the session's ForeRSI data. Project files and agent-owned configuration and conversation history are retained. Exit a running session before deleting it.
 
 ## The improvement loop
 

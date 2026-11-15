@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Session, workflow, display, and diagnostic configuration for ForeRSI."""
+"""Application settings and command-line configuration for ForeRSI."""
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from tyro.conf import Positional, arg
 
@@ -14,7 +15,7 @@ from tyro.conf import Positional, arg
 class WorkflowConfig:
     """Task and agent execution."""
 
-    # Select a workflow.
+    # Select a built-in or project workflow by its declared name.
     name: Annotated[str | None, arg(name="workflow", prefix_name=False)] = None
     # Markdown task file.
     task: Annotated[Path | None, arg(prefix_name=False)] = None
@@ -47,10 +48,12 @@ class LoggingConfig:
 
 @dataclass
 class Config:
-    """Inputs for running, listing, reconnecting to, or stopping ForeRSI sessions."""
+    """User inputs and internal settings for ForeRSI session commands."""
 
-    # Run, list, reconnect to, or stop ForeRSI sessions.
-    session_action: Positional[Literal["run", "list", "stop"]] = "run"
+    TERMINAL_EXECUTABLE_NAME: ClassVar[str] = "_terminal.exe" if os.name == "nt" else "_terminal"
+
+    # Run or resume a session, list sessions, or delete a stopped session.
+    session_action: Positional[Literal["run", "list", "delete"]] = "run"
 
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     ui: UIConfig = field(default_factory=UIConfig)

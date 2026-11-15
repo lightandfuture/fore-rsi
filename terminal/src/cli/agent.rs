@@ -58,7 +58,7 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         Operation::Rename(params) => agent_rename(params),
         Operation::Wait(params) => agent_wait(params),
         Operation::Prompt(params) => agent_prompt(params),
-        Operation::Start(params) => agent_start(params),
+        Operation::Start { params, wait } => agent_start(params, wait),
         Operation::Attach(params) => agent_attach(params),
         Operation::Explain(params) => agent_explain(params),
     }
@@ -250,7 +250,7 @@ fn matched_rule_region_preview<'a>(
         .filter(|preview| !preview.is_empty())
 }
 
-fn agent_start(params: AgentStartParams) -> std::io::Result<i32> {
+fn agent_start(params: AgentStartParams, wait: bool) -> std::io::Result<i32> {
     let AgentStartParams {
         name,
         kind,
@@ -326,6 +326,9 @@ fn agent_start(params: AgentStartParams) -> std::io::Result<i32> {
         .is_some_and(|pinned| pinned != expected_terminal_id)
     {
         return super::print_response(&agent_name_lost_error("cli:agent:start", &name));
+    }
+    if !wait {
+        return super::print_response(&response);
     }
     let waited = wait_for_named_agent(
         &name,
@@ -447,10 +450,12 @@ fn wait_for_named_agent(
                 {
                     Some(Ok(agent.clone()))
                 }
-                Some("working" | "unknown") => None,
-                Some("idle" | "done") if agent["interactive_ready"].as_bool() == Some(true) => {
+                Some("working" | "idle" | "done")
+                    if agent["interactive_ready"].as_bool() == Some(true) =>
+                {
                     Some(Ok(agent.clone()))
                 }
+                Some("working" | "unknown") => None,
                 Some("idle" | "done") if !agent["launch_pending"].as_bool().unwrap_or(false) => {
                     Some(Err(cli_agent_error(
                         "cli:agent:start",

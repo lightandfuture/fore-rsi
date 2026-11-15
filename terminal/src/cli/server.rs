@@ -13,6 +13,7 @@ pub(super) fn run_server_command(args: &[String]) -> std::io::Result<Option<i32>
     };
 
     match subcommand {
+        "start" => server_start(&args[1..]).map(Some),
         "stop" => server_stop(&args[1..]).map(Some),
         "live-handoff" => server_live_handoff(&args[1..]).map(Some),
         "--handoff-import" => Ok(None),
@@ -29,6 +30,17 @@ pub(super) fn run_server_command(args: &[String]) -> std::io::Result<Option<i32>
             Ok(Some(2))
         }
     }
+}
+
+/// Start the selected local session for API callers without attaching a TUI.
+fn server_start(args: &[String]) -> std::io::Result<i32> {
+    if !args.is_empty() {
+        eprintln!("usage: herdr server start");
+        return Ok(2);
+    }
+    crate::client::init_logging();
+    crate::server::autodetect::ensure_server_running(false, false)?;
+    Ok(0)
 }
 
 fn server_stop(args: &[String]) -> std::io::Result<i32> {
@@ -257,6 +269,9 @@ fn parse_live_handoff_params(args: &[String]) -> Result<ServerLiveHandoffParams,
 fn print_server_help() {
     eprintln!("herdr server commands:");
     eprintln!("  herdr server                run as headless server");
+    eprintln!(
+        "  herdr server start          start or reuse a background server without a terminal"
+    );
     #[cfg(windows)]
     eprintln!("  herdr server --allow-unelevated-clients  allow ordinary same-account clients to control an elevated server");
     eprintln!("  herdr server stop           stop the running server via the API socket");

@@ -68,7 +68,10 @@ fn ensure_extension_dir(dir: &Path, agent: &str) -> io::Result<()> {
     if dir.is_dir() {
         return Ok(());
     }
-    if dir.parent().is_some_and(|parent| parent.is_dir()) {
+    // A newly installed CLI may not have created its user profile yet.
+    if dir.parent().is_some_and(|parent| parent.is_dir())
+        || super::registry::command_available(agent)
+    {
         return fs::create_dir_all(dir);
     }
     Err(io::Error::other(format!(

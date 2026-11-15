@@ -18,7 +18,7 @@ license-files = [
 dependencies = ["loguru>=0.8,<1", "tyro>=1.0.17,<2"]
 
 [project.scripts]
-fore-rsi = "fore_rsi.main:main"
+fore-rsi = "fore_rsi.__main__:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

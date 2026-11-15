@@ -19,7 +19,7 @@ fn params(args: &[&str]) -> serde_json::Value {
         Operation::Rename(params) => Method::AgentRename(params),
         Operation::Wait(params) => Method::AgentWait(params),
         Operation::Prompt(params) => Method::AgentPrompt(params),
-        Operation::Start(params) => Method::AgentStart(params),
+        Operation::Start { params, .. } => Method::AgentStart(params),
         _ => panic!("expected API params"),
     };
     serde_json::to_value(Request {

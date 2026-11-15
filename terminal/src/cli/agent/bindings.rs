@@ -233,7 +233,10 @@ pub(crate) enum Operation {
     Rename(AgentRenameParams),
     Wait(AgentWaitParams),
     Prompt(AgentPromptParams),
-    Start(AgentStartParams),
+    Start {
+        params: AgentStartParams,
+        wait: bool,
+    },
     Attach(Attach),
     Explain(Explain),
 }
@@ -264,8 +267,10 @@ pub(crate) fn command() -> Command {
             .override_usage("herdr agent prompt <TARGET> <TEXT> [OPTIONS]")
             .after_help("If the agent is already blocked, submission is rejected with agent_blocked before any input is sent. When an accepted submission starts from another non-working state, --wait requires an observed working or blocked state within 5000ms; otherwise it returns agent_prompt_stalled. A caller timeout that expires first returns timeout. It then matches idle, done, or blocked by default, or any exact --until state. It does not track turns: if the agent is already working, that active turn's completion may match."))
         .subcommand(leaf("start", AgentStartProjection::arguments(), "Start a supported interactive agent in an existing pane")
+            .arg(clap::Arg::new("no-wait").long("no-wait").action(clap::ArgAction::SetTrue)
+                .help("Return after the runtime accepts the launch, before interactive readiness"))
             .override_usage("herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS] [-- [AGENT_ARG]...]")
-            .after_help("The pane must be at its interactive shell prompt. Success means the expected agent was detected in the same terminal and is ready for input.\n\nnext: herdr agent prompt <TARGET> <TEXT> --wait"))
+            .after_help("The pane must be at its interactive shell prompt. By default, success means the expected agent was detected in the same terminal and is ready for input. With --no-wait, attach to the terminal to observe startup and handle interactive prompts.\n\nnext: herdr agent prompt <TARGET> <TEXT> --wait"))
         .subcommand(leaf("attach", AttachProjection::arguments(), "Attach directly to an agent terminal")
             .override_usage("herdr agent attach <TARGET> [OPTIONS]"))
         .subcommand(leaf("explain", ExplainProjection::arguments(), "Explain agent detection state")
@@ -295,7 +300,10 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError
             }
             Operation::Prompt(params)
         }
-        "start" => Operation::Start(AgentStartProjection::from_matches(matches)?),
+        "start" => Operation::Start {
+            params: AgentStartProjection::from_matches(matches)?,
+            wait: !matches.get_flag("no-wait"),
+        },
         "attach" => Operation::Attach(AttachProjection::from_matches(matches)?),
         "explain" => Operation::Explain(ExplainProjection::from_matches(matches)?),
         _ => return Err(ParseError::Usage(format!("unknown agent command: {name}"))),

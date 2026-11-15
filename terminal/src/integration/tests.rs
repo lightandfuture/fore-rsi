@@ -782,18 +782,25 @@ fn uninstall_omp_removes_embedded_extension_when_present() {
     let _ = fs::remove_dir_all(base);
 }
 
+// Installation still fails when neither the OMP profile nor its executable exists.
 #[test]
-fn install_omp_errors_when_extension_dir_missing() {
+fn install_omp_errors_when_agent_is_unavailable() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
     fs::create_dir_all(&home).unwrap();
     std::env::set_var("HOME", &home);
+    let original_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", base.join("no-commands"));
 
     let err = install_omp().unwrap_err().to_string();
 
     assert!(err.contains("omp extension directory not found"));
 
+    match original_path {
+        Some(path) => std::env::set_var("PATH", path),
+        None => std::env::remove_var("PATH"),
+    }
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
 }
@@ -923,18 +930,25 @@ fn outdated_integrations_accept_current_version_marker() {
     let _ = fs::remove_dir_all(base);
 }
 
+// Installation still fails when neither the Pi profile nor its executable exists.
 #[test]
-fn install_pi_errors_when_extension_dir_missing() {
+fn install_pi_errors_when_agent_is_unavailable() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
     fs::create_dir_all(&home).unwrap();
     std::env::set_var("HOME", &home);
+    let original_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", base.join("no-commands"));
 
     let err = install_pi().unwrap_err().to_string();
 
     assert!(err.contains("pi extension directory not found"));
 
+    match original_path {
+        Some(path) => std::env::set_var("PATH", path),
+        None => std::env::remove_var("PATH"),
+    }
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
 }

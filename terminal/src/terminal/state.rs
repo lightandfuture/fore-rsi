@@ -2223,13 +2223,15 @@ impl TerminalState {
             self.clear_agent_name();
             return true;
         }
+        // An agent may begin its initial task before showing an idle prompt.
+        // Working proves startup completed and must not expire its managed name.
+        let interactive_ready = known_agent == Some(managed.kind)
+            && (matches!(self.state, AgentState::Idle | AgentState::Working)
+                || managed.kind == Agent::Codex
+                    && self.state == AgentState::Unknown
+                    && self.codex_prompt_ready);
         if managed.phase == ManagedAgentPhase::Blocked {
-            if known_agent == Some(managed.kind)
-                && (self.state == AgentState::Idle
-                    || managed.kind == Agent::Codex
-                        && self.state == AgentState::Unknown
-                        && self.codex_prompt_ready)
-            {
+            if interactive_ready {
                 self.managed_agent = Some(ManagedAgent {
                     kind: managed.kind,
                     phase: ManagedAgentPhase::Active,
@@ -2257,12 +2259,7 @@ impl TerminalState {
                 return true;
             }
             if ready_after.is_none_or(|ready_after| now >= ready_after) {
-                if known_agent == Some(managed.kind)
-                    && (self.state == AgentState::Idle
-                        || managed.kind == Agent::Codex
-                            && self.state == AgentState::Unknown
-                            && self.codex_prompt_ready)
-                {
+                if interactive_ready {
                     self.managed_agent = Some(ManagedAgent {
                         kind: managed.kind,
                         phase: ManagedAgentPhase::Active,

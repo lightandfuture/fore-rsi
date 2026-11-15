@@ -8,57 +8,40 @@ from __future__ import annotations
 import inspect
 import logging as stdlib_logging
 import sys
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from fore_rsi.config import LoggingConfig
 
-if TYPE_CHECKING:
-    from loguru import Record
 
-
-def configure_logging(config: LoggingConfig, *, console_enabled: bool = True) -> None:
-    """Apply application diagnostics, exiting with a CLI message if setup fails.
+def setup_logging(config: LoggingConfig) -> None:
+    """Configure application diagnostics from the parsed logging options.
 
     The application entry point owns sink configuration; Loguru closes synchronous
-    sinks at process exit. Disable console output while a TUI owns the terminal.
-    Independent processes own separate files.
+    sinks at process exit. Independent processes own separate files.
     """
     settings = {
         "level": config.level,
-        "format": _format_record,
+        "format": (
+            "{time:YYYY-MM-DD HH:mm:ss.SSS Z} | {level: <8} | "
+            "{process.id} | {name}:{line} | {message}"
+        ),
         "serialize": config.format == "json",
         "colorize": False,
         "backtrace": False,
         "diagnose": False,
         "enqueue": False,
     }
-    handlers = []
-    if console_enabled:
-        handlers.append({**settings, "sink": sys.stderr})
+    handlers = [{**settings, "sink": sys.stderr}]
     if config.file is not None:
         # Loguru accepts filename templates, but this option is a literal filesystem path.
         filename = str(config.file.expanduser()).replace("{", "{{").replace("}", "}}")
         handlers.append({**settings, "sink": filename, "encoding": "utf-8"})
-    try:
-        logger.configure(handlers=handlers)
-        stdlib_logging.basicConfig(
-            handlers=[_InterceptHandler()],
-            level=logger.level(config.level).no,
-            force=True,
-        )
-    except (OSError, ValueError) as error:
-        raise SystemExit(f"fore-rsi: cannot configure logging: {error}") from None
-
-
-def _format_record(record: Record) -> str:
-    """Include bound context when present and retain native exception rendering."""
-    context = " | {extra}" if record["extra"] else ""
-    return (
-        "{time:YYYY-MM-DD HH:mm:ss.SSS Z} | {level: <8} | {process.id} | {name}:{line} | {message}"
-        + context
-        + "\n{exception}"
+    logger.configure(handlers=handlers)
+    stdlib_logging.basicConfig(
+        handlers=[_InterceptHandler()],
+        level=logger.level(config.level).no,
+        force=True,
     )
 
 

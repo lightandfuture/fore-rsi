@@ -6,6 +6,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import version
+import sys
 from typing import Annotated
 
 import tyro
@@ -23,16 +24,17 @@ class _CommandLine:
 
 def parse_args(args: Sequence[str] | None = None) -> Config:
     """Return validated configuration, or exit after help, version, or a usage error."""
+    arguments = list(args) if args is not None else sys.argv[1:]
     command_line = tyro.cli(
         _CommandLine,
         prog="fore-rsi",
         description="Run agent teams with feedback-driven workflows.",
-        args=args,
+        args=arguments,
         config=(tyro.conf.DisallowNone, tyro.conf.FlagCreatePairsOff),
     )
     if command_line.version:
         print(f"fore-rsi {version('fore-rsi')}")
         raise SystemExit(0)
 
-    validate_config(command_line.options)
+    validate_config(command_line.options, arguments)
     return command_line.options

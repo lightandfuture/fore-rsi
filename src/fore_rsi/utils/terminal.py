@@ -5,10 +5,8 @@
 
 import asyncio
 from importlib.metadata import distribution
-import json
 from pathlib import Path
 import subprocess
-from typing import Any
 
 from fore_rsi.config import Config
 
@@ -42,12 +40,6 @@ async def run_terminal(
     )
     result.check_returncode()
     return result
-
-
-async def query_terminal(arguments: list[str], session: str | None = None) -> dict[str, Any]:
-    """Return a native JSON response without taking terminal input or blocking the event loop."""
-    result = await run_terminal(arguments, session, capture_output=True)
-    return json.loads(result.stdout)
 
 
 def terminal_command(arguments: list[str], session: str | None = None) -> list[str]:

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
 .venv/
+/cache/
 __pycache__/
 *.py[cod]
 *.egg-info/

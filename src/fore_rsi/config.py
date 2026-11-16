@@ -15,20 +15,15 @@ from tyro.conf import Positional, arg
 class WorkflowConfig:
     """Task and agent execution."""
 
+    SESSIONS_DIR_NAME: ClassVar[str] = "workflows"
+    SESSION_RECORD_NAME: ClassVar[str] = "workflow.json"
+
     # Select a built-in or project workflow by its declared name.
-    name: Annotated[str | None, arg(name="workflow", prefix_name=False)] = None
+    workflow_name: Annotated[str, arg(name="workflow", prefix_name=False)] = "default"
     # Markdown task file.
     task: Annotated[Path | None, arg(prefix_name=False)] = None
     # Select the workflow's agent execution backend.
     harness: Annotated[str | None, arg(prefix_name=False)] = None
-
-
-@dataclass
-class UIConfig:
-    """User interface configuration."""
-
-    # Select a named ForeRSI session.
-    session: Annotated[str | None, arg(prefix_name=False)] = None
 
 
 @dataclass
@@ -54,7 +49,10 @@ class Config:
 
     # Run or resume a session, list sessions, or delete a stopped session.
     session_action: Positional[Literal["run", "list", "delete"]] = "run"
+    # Select the ForeRSI session shared by its workflow and interface.
+    session: Annotated[str | None, arg(prefix_name=False)] = None
+    # Local runtime data, relative to the project Git root or startup directory outside Git.
+    cache_dir: Annotated[Path, arg(name="cache-dir", prefix_name=False)] = Path("./cache")
 
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
-    ui: UIConfig = field(default_factory=UIConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)

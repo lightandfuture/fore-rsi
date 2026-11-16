@@ -146,9 +146,9 @@ Replace the path with your own task file as needed. Relative paths are resolved 
 
 ### Exit and resume
 
-Press `Ctrl+B`, release it, then press `q`, or close the terminal window. Exiting stops the workflow and its managed agents and tasks, while keeping session state and conversation history for recovery. Inside an agent conversation, `Ctrl+C` interrupts the current turn.
+Press `Ctrl+B`, release it, then press `q` to exit. ForeRSI cancels the workflow and waits for its cleanup, keeping the background terminal server, session data, and conversation history. Terminal hangup (`SIGHUP`) and termination (`SIGTERM`) signals use the same exit path. Inside an agent conversation, `Ctrl+C` interrupts the current turn.
 
-List local sessions and their running or stopped status:
+List sessions with their workflow names, workflow states, and terminal server status:
 
 ```bash
 fore-rsi list
@@ -164,13 +164,13 @@ The session resumes its saved workflow and task progress. You do not need to pas
 
 ### Delete a session
 
-Delete a stopped named session when you no longer need to resume it:
+Delete a named terminal session when you no longer need it:
 
 ```bash
 fore-rsi delete --session sglang-throughput
 ```
 
-This permanently removes the session's ForeRSI data. Project files and agent-owned configuration and conversation history are retained. Exit a running session before deleting it.
+The command stops its terminal server before removing the session's terminal data. Workflow records in the cache, project files, and agent-owned configuration and conversation history are retained.
 
 ## The improvement loop
 

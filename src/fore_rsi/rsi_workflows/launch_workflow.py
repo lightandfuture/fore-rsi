@@ -10,7 +10,7 @@ from pkgutil import walk_packages
 from fore_rsi.config import Config
 from fore_rsi.rsi_workflows import custom_workflows
 from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
-from fore_rsi.rsi_workflows.runtimes.workflow_runner import WorkflowRunner
+from fore_rsi.rsi_workflows.workflow_runtimes.workflow_runner import WorkflowRunner
 
 
 def create_workflow_runner(config: Config) -> WorkflowRunner:
@@ -23,7 +23,8 @@ def create_workflow_runner(config: Config) -> WorkflowRunner:
         raise ValueError(f"Unknown workflow {workflow_name!r}. Available workflows: {available}.")
 
     return WorkflowRunner(
-        workflow_class(config.workflow),
+        workflow_class=workflow_class,
+        workflow_config=config.workflow,
         session_name=config.session,
         cache_dir=config.cache_dir,
     )

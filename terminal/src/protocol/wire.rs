@@ -1064,6 +1064,12 @@ pub struct ClientShellPane {
     pub foreground_cwd: Option<String>,
     pub focused: bool,
     pub right_click_passthrough: bool,
+    /// The underlying terminal keeps its identity when its pane moves between workspaces.
+    #[serde(default)]
+    pub terminal_id: String,
+    /// Display metadata is also available for panes without a detected agent.
+    #[serde(default)]
+    pub tokens: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2842,6 +2848,8 @@ mod tests {
                 agent_status: crate::api::schema::AgentStatus::Idle,
             }],
             panes: vec![ClientShellPane {
+                terminal_id: "term_1".into(),
+                tokens: vec![("fore_rsi_view".into(), "progress".into())],
                 pane_id: "w1:p1".into(),
                 workspace_id: "w1".into(),
                 tab_id: "w1:t1".into(),

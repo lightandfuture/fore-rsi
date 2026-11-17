@@ -546,6 +546,9 @@ impl App {
             return RuntimeExitAction::ClosePane;
         };
 
+        if terminal.managed_key.is_some() {
+            return RuntimeExitAction::ClosePane;
+        }
         if terminal.respawn_shell_on_exit || self.should_respawn_shell_after_agent_exit(terminal) {
             RuntimeExitAction::RespawnShell
         } else {
@@ -1143,6 +1146,7 @@ impl App {
             Method::AgentSendKeys(params) => {
                 return self.handle_agent_send_keys(request.id, params);
             }
+            Method::PaneEnsure(params) => return self.handle_pane_ensure(request.id, params),
             Method::PaneSplit(params) => return self.handle_pane_split(request.id, params),
             Method::PaneSwap(params) => return self.handle_pane_swap(request.id, params),
             Method::PaneMove(params) => return self.handle_pane_move(request.id, params),

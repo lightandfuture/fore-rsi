@@ -281,6 +281,17 @@ pub(crate) fn source() -> Input<String> {
     text("source", "ID").required()
 }
 
+/// Preserve the trailing command argv for direct managed-pane execution.
+pub(crate) fn managed_command() -> Input<Vec<String>> {
+    Input::positional("argv", 0, |slot: &mut Vec<String>, value| {
+        slot.push(value.to_owned());
+        Ok(())
+    })
+    .value_name("COMMAND")
+    .configure(|arg| arg.required(false).num_args(1..).last(true))
+    .help("Executable and arguments to run directly; omit to use the configured shell")
+}
+
 pub(crate) fn resume() -> Input<Option<Vec<String>>> {
     Input::positional("resume_argv", 1, |slot: &mut Option<Vec<String>>, value| {
         slot.get_or_insert_with(Vec::new).push(value.to_owned());
@@ -451,6 +462,14 @@ macro_rules! leaf {
 }
 
 pub(super) const LEAVES: &[Leaf] = &[
+    leaf!(
+        "ensure",
+        "Create or reuse a shell or command pane by session key",
+        "cli:pane:ensure",
+        Json,
+        PaneEnsureProjection,
+        PaneEnsure
+    ),
     leaf!(
         "list",
         "List panes",

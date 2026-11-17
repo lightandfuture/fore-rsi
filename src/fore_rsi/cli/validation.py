@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import sys
 
 from fore_rsi.config import Config
+from fore_rsi.rsi_workflows.agent_runtimes import get_agent_runtime_class
 
 
 def validate_config(config: Config, arguments: Sequence[str]) -> None:
@@ -19,14 +20,20 @@ def validate_config(config: Config, arguments: Sequence[str]) -> None:
         )
         raise SystemExit(2)
 
-    if config.session_action == "delete" and "--cache-dir" in supplied_options:
-        print("fore-rsi: delete does not accept --cache-dir.", file=sys.stderr)
-        raise SystemExit(2)
-
     if config.session_action == "list" and config.session is not None:
         print("fore-rsi: list does not accept --session.", file=sys.stderr)
         raise SystemExit(2)
 
-    if config.session_action == "delete" and config.session is None:
-        print("fore-rsi: delete requires --session NAME.", file=sys.stderr)
+    if config.session_action in {"stop", "delete", "workprogress"} and config.session is None:
+        print(f"fore-rsi: {config.session_action} requires --session NAME.", file=sys.stderr)
         raise SystemExit(2)
+
+    if config.session_action == "workprogress" and "--cache-dir" in supplied_options:
+        print("fore-rsi: workprogress uses the session's saved storage; omit --cache-dir.", file=sys.stderr)
+        raise SystemExit(2)
+
+    try:
+        get_agent_runtime_class(config.workflow.harness)
+    except ValueError as error:
+        print(f"fore-rsi: {error}", file=sys.stderr)
+        raise SystemExit(2) from None

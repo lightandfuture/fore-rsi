@@ -136,8 +136,12 @@ pub(super) fn snapshot_with_completions(
                         .pane_state(pane_id)
                 })
                 .is_some_and(|pane| pane.right_click_passthrough);
+            let mut tokens = pane.tokens.into_iter().collect::<Vec<_>>();
+            tokens.sort_unstable_by(|left, right| left.0.cmp(&right.0));
             protocol::ClientShellPane {
                 pane_id,
+                terminal_id: pane.terminal_id,
+                tokens,
                 workspace_id: pane.workspace_id,
                 tab_id: pane.tab_id,
                 label: pane.label,

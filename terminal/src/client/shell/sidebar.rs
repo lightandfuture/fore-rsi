@@ -127,8 +127,10 @@ pub(crate) fn render_collapsed_sidebar(
         detail_area.width,
         detail_area.height.saturating_sub(1),
     );
+    let progress = super::sidebar_fore_rsi::progress_pane(snapshot).map(|p| &p.pane_id);
     for (index, pane_id) in super::ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
         .into_iter()
+        .filter(|id| Some(id) != progress)
         .take(detail_content.height as usize)
         .enumerate()
     {

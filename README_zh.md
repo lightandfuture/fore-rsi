@@ -121,6 +121,8 @@ fore-rsi --workflow inference \
   --session sglang-throughput
 ```
 
+ForeRSI 优先复用已安装的 CLI，缺失时调用所选后端的官方安装器。按安装器提示准备依赖；需要认证时，使用原生工具的登录流程。
+
 也可以根据任务需要[定制 RSI 工作流](#设计你的定制-rsi-工作流)，调整团队角色、工具、执行步骤与评价标准。参数说明见 [CLI 参考](docs/cli.md)，或运行 `fore-rsi --help`。
 
 ### 提供任务
@@ -146,7 +148,7 @@ fore-rsi --workflow inference \
 
 ### 退出与恢复
 
-按 `Ctrl+B`，松开后再按 `q` 退出。ForeRSI 会取消工作流并等待其清理完成，保留后台终端服务器、会话数据和对话记录。终端挂断信号（`SIGHUP`）和进程终止信号（`SIGTERM`）也走同一退出流程。在 Agent 对话中，`Ctrl+C` 用于中断当前轮次。
+按 `Ctrl+B`，松开后再按 `q` 退出。在 Agent 对话中，`Ctrl+C` 用于中断当前轮次。
 
 列出会话，查看工作流名称、工作流状态和终端服务器状态：
 
@@ -162,15 +164,21 @@ fore-rsi --session sglang-throughput
 
 会话使用已保存的工作流和任务进度继续执行，无需再次传入 `--task`。
 
+### 停止会话
+
+停止会话并保留数据：
+
+```bash
+fore-rsi stop --session sglang-throughput
+```
+
 ### 删除会话
 
-删除不再需要的命名终端会话：
+删除不再需要的命名会话：
 
 ```bash
 fore-rsi delete --session sglang-throughput
 ```
-
-命令会先停止该会话的终端服务器，再删除终端数据。缓存中的工作流记录、项目文件，以及 Agent 自行管理的配置和对话记录会保留。
 
 ## 持续改进循环
 

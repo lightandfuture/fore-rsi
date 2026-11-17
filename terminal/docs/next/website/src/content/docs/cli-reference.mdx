@@ -208,6 +208,7 @@ Workspace and tab creation, and pane splitting, leave focus unchanged by default
 
 ```bash
 herdr pane list [--workspace <workspace_id>]
+herdr pane ensure --key KEY --cwd PATH [--workspace ID] [--label TEXT] [-- COMMAND [ARG ...]]
 herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 herdr pane layout [--pane ID|--current]
@@ -227,6 +228,8 @@ herdr pane move <pane_id> --new-tab [--workspace ID] [--label TEXT] [--focus|--n
 herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--focus|--no-focus]
 herdr pane close <pane_id>
 ```
+
+`pane ensure` reuses the pane with the given key even if it was renamed or moved. `--workspace` selects where to create a missing pane; it does not move or focus an existing one. Without a target in an empty session, the new workspace's first tab receives focus. Omit the command to open a shell with normal agent session restore. An explicit command runs directly, is relaunched on layout restore, and closes its pane when it exits. If the saved pane is unavailable, `ensure` reports its error instead of creating another copy.
 
 For pane commands that accept `--current`, Herdr uses the calling pane's
 `HERDR_PANE_ID` when the command runs inside a Herdr pane. For `pane split`,

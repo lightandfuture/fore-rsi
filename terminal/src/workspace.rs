@@ -272,80 +272,9 @@ impl Workspace {
         }
     }
 
-    pub fn new(
-        initial_cwd: PathBuf,
-        rows: u16,
-        cols: u16,
-        scrollback_limit_bytes: usize,
-        host_terminal_theme: crate::terminal_theme::TerminalTheme,
-        host_terminal_appearance: Option<crate::terminal_theme::HostAppearance>,
-        shell_config: crate::pane::PaneShellConfig<'_>,
-        events: mpsc::Sender<AppEvent>,
-        render_notify: Arc<Notify>,
-        render_dirty: Arc<RenderSignal>,
-    ) -> std::io::Result<(Self, TerminalState, TerminalRuntime)> {
-        Self::new_with_tab(
-            initial_cwd,
-            rows,
-            cols,
-            scrollback_limit_bytes,
-            host_terminal_theme,
-            host_terminal_appearance,
-            shell_config,
-            events,
-            render_notify,
-            render_dirty,
-            None,
-            Vec::new(),
-        )
-    }
-
+    /// Construct a workspace with its first tab running the supplied argv or the configured shell.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_extra_env(
-        initial_cwd: PathBuf,
-        rows: u16,
-        cols: u16,
-        scrollback_limit_bytes: usize,
-        host_terminal_theme: crate::terminal_theme::TerminalTheme,
-        host_terminal_appearance: Option<crate::terminal_theme::HostAppearance>,
-        shell_config: crate::pane::PaneShellConfig<'_>,
-        events: mpsc::Sender<AppEvent>,
-        render_notify: Arc<Notify>,
-        render_dirty: Arc<RenderSignal>,
-        extra_env: Vec<(String, String)>,
-    ) -> std::io::Result<(Self, TerminalState, TerminalRuntime)> {
-        if extra_env.is_empty() {
-            return Self::new(
-                initial_cwd,
-                rows,
-                cols,
-                scrollback_limit_bytes,
-                host_terminal_theme,
-                host_terminal_appearance,
-                shell_config,
-                events,
-                render_notify,
-                render_dirty,
-            );
-        }
-        Self::new_with_tab(
-            initial_cwd,
-            rows,
-            cols,
-            scrollback_limit_bytes,
-            host_terminal_theme,
-            host_terminal_appearance,
-            shell_config,
-            events,
-            render_notify,
-            render_dirty,
-            None,
-            extra_env,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn new_with_tab(
+    pub(crate) fn new(
         initial_cwd: PathBuf,
         rows: u16,
         cols: u16,
@@ -507,7 +436,7 @@ impl Workspace {
         )
     }
 
-    fn create_tab_with_runtime(
+    pub(crate) fn create_tab_with_runtime(
         &mut self,
         rows: u16,
         cols: u16,

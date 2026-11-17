@@ -2581,6 +2581,42 @@
           },
           "type": "object"
         },
+        "PaneEnsureParams": {
+          "properties": {
+            "argv": {
+              "description": "Omit the command to create a regular shell pane with native agent restore.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "key": {
+              "description": "Stable pane identity within this terminal session.",
+              "type": "string"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "description": "Place a new pane here; existing panes retain their location.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "cwd"
+          ],
+          "type": "object"
+        },
         "PaneFocusDirectionParams": {
           "properties": {
             "direction": {
@@ -6305,6 +6341,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PluginPaneCloseParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.ensure",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneEnsureParams"
             }
           },
           "required": [

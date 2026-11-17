@@ -16,10 +16,10 @@ fore-rsi --workflow inference \
 This example uses the task file from the ForeRSI repository root. All startup options are optional:
 
 - `--workflow NAME` selects `default` for general tasks, `inference` for inference optimization, or a custom workflow by name. Omitting it selects `default`.
-- `--harness NAME` selects the backend that runs agents, such as `pi`.
+- `--harness NAME` selects `pi` (the default), `codex`, or `claude` (Claude Code). ForeRSI reuses the installed CLI or runs that backend's official installer before opening the interface.
 - `--session NAME` names the ForeRSI session to create or resume.
 - `--task FILE` provides a Markdown task file. Omit it to describe the task in the conversation.
-- `--cache-dir PATH` sets the root directory for local ForeRSI runtime data (default: `./cache`). Relative paths use the current project's Git repository root, or the startup directory outside Git; absolute paths are used directly. Workflow session records are stored in its `workflows/` subdirectory.
+- `--cache-dir PATH` chooses workflow storage for a new session (default: `./cache`). Relative paths use the current project's Git repository root, or the startup directory outside Git; absolute paths are used directly. Workflow data is stored in its `workflows/` subdirectory. Each session name keeps its original storage location for the current user, even when started again from another directory.
 
 Quote values containing spaces. Relative task paths are relative to the working directory. With either task input method, you can continue sharing materials and refining requirements in the conversation.
 
@@ -29,7 +29,7 @@ To resume, use the same `--session` name without resubmitting `--task`. See [Exi
 
 ### List sessions
 
-List the workflows registered in the selected cache and local terminal sessions:
+List registered workflows from their saved locations and local terminal sessions:
 
 ```bash
 fore-rsi list
@@ -39,21 +39,43 @@ fore-rsi list
 
 `TERMINAL_SERVER` independently shows `running`, `stopped`, or `unavailable`. A dash (`—`) marks a missing record or a workflow record that has no saved state.
 
-If startup used a custom cache, pass the same `--cache-dir PATH` to `list`.
+Saved sessions do not need `--cache-dir` for listing, stopping, or deletion. The current project's default cache, or a directory selected with `--cache-dir`, is also checked for workflow records without a saved storage binding.
 
 Use a name from the list with `fore-rsi --session NAME` to resume it. `list` does not accept `--session`.
 
+### Open work progress
+
+Select Work progress at the top of the sidebar to switch to the progress page. Under the workspace, `global` is the first group. Its first member is the workflow's entry agent, listed by name. To open the progress page in a separate terminal:
+
+```bash
+fore-rsi workprogress --session sglang-throughput
+```
+
+The page shows the session name and an empty progress area. Press `q` or `Esc` to close the page while leaving the workflow running. It uses the session's saved location and does not accept `--cache-dir`.
+
+### Stop a session
+
+Stop a session while keeping its data:
+
+```bash
+fore-rsi stop --session sglang-throughput
+```
+
+`stop` requires `--session NAME` and uses the saved storage location. It waits for workflow cleanup before stopping the terminal server, keeping session data and the storage binding. An already stopped session succeeds; an unknown name reports an error. The default session can also be stopped with `--session default`. On Windows, exit the running workflow first.
+
 ### Delete a session
 
-Stop and delete a named terminal session:
+Stop and delete a named session:
 
 ```bash
 fore-rsi delete --session sglang-throughput
 ```
 
-`delete` requires `--session NAME`. It stops the terminal server before deleting its session data; the default session `default` is retained. Workflow records in the cache, project files, and agent-owned configuration and conversation history are preserved.
+`delete` requires `--session NAME`. It uses the session's saved storage location, stops the workflow and waits for cleanup, then stops and deletes the terminal session, and finally removes the workflow directory and its storage binding. It also handles sessions present on only one side. If shutdown fails, the command reports the error and retains the workflow cache and binding.
 
-`--workflow`, `--harness`, and `--task` apply only to `run`. `--cache-dir` applies to `run` and `list`.
+The default session `default`, project files, and agent-owned configuration and conversation history are preserved. On Windows, exit the running workflow before deleting its session.
+
+`--workflow`, `--harness`, and `--task` apply only to `run`. `--cache-dir` applies to `run`, `list`, `stop`, and `delete`.
 
 ### Diagnostic logs
 
@@ -84,10 +106,10 @@ fore-rsi --workflow inference \
 示例使用 ForeRSI 仓库根目录下的任务文件。启动参数均可按需省略：
 
 - `--workflow NAME` 选择通用工作流 `default`、推理优化工作流 `inference`，或按名称选择自定义工作流。省略时使用 `default`。
-- `--harness NAME` 选择执行 Agent 的后端，例如 `pi`。
+- `--harness NAME` 选择 `pi`（默认）、`codex` 或 `claude`（Claude Code）。ForeRSI 复用已安装的 CLI；缺失时，先运行该后端的官方安装器，再打开界面。
 - `--session NAME` 指定要创建或恢复的 ForeRSI 会话名称。
 - `--task FILE` 提供 Markdown 任务文件。省略时，在对话中直接描述任务。
-- `--cache-dir PATH` 指定 ForeRSI 本地运行数据的根目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流会话记录保存在其中的 `workflows/` 子目录。
+- `--cache-dir PATH` 指定新会话的工作流存储目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流数据保存在其中的 `workflows/` 子目录。当前用户的每个会话名称绑定首次确定的存储位置，之后即使换目录启动，也沿用原位置。
 
 值中有空格时加引号。任务文件的相对路径以工作目录为基准。两种任务输入方式都可以在后续对话中继续补充材料或调整要求。
 
@@ -97,7 +119,7 @@ fore-rsi --workflow inference \
 
 ### 列出会话
 
-汇总所选缓存中登记的工作流和本地终端会话：
+按保存的存储位置汇总已登记的工作流，以及本地终端会话：
 
 ```bash
 fore-rsi list
@@ -107,21 +129,43 @@ fore-rsi list
 
 `TERMINAL_SERVER` 独立显示终端服务器的 `running`、`stopped` 或 `unavailable` 状态。缺少某一侧记录，或工作流记录尚未保存状态时，显示 `—`。
 
-启动时如果指定了自定义缓存目录，查询时也传入相同的 `--cache-dir PATH`。
+查询、停止和删除已有会话无需再提供 `--cache-dir`。尚未绑定存储位置的工作流记录，仍从当前项目的默认缓存或 `--cache-dir` 指定的目录查找。
 
 使用列表中的名称运行 `fore-rsi --session NAME` 即可恢复会话。`list` 不接受 `--session`。
 
+### 查看工作进展
+
+点击侧栏顶部的「工作进展」可切回进展页。工作区下先列 `global` 组，组内第一项是当前工作流的入口 Agent，显示该 Agent 自己的名字。也可以在另一个终端单独打开进展页：
+
+```bash
+fore-rsi workprogress --session sglang-throughput
+```
+
+页面显示会话名称和空状态。按 `q` 或 `Esc` 关闭页面，工作流继续运行。该命令自动使用会话保存的位置，不接受 `--cache-dir`。
+
+### 停止会话
+
+停止会话并保留数据：
+
+```bash
+fore-rsi stop --session sglang-throughput
+```
+
+`stop` 必须提供 `--session NAME`，并自动使用保存的存储位置。命令会等待工作流收尾，再停止终端服务器，保留会话数据与存储绑定。重复停止已停止的会话会成功返回；名称不存在时会报错。默认会话也可以通过 `--session default` 停止。Windows 上需先退出运行中的工作流。
+
 ### 删除会话
 
-停止并删除命名终端会话：
+停止并删除命名会话：
 
 ```bash
 fore-rsi delete --session sglang-throughput
 ```
 
-`delete` 必须提供 `--session NAME`，命令会先停止终端服务器，再删除其会话数据。默认会话 `default` 保留。缓存中的工作流记录、项目文件，以及 Agent 自行管理的配置和对话记录会保留。
+`delete` 必须提供 `--session NAME`。命令按会话绑定的存储位置找到工作流，先停止并等待清理完成，再停止并删除终端会话，最后删除工作流目录及其存储绑定。只有工作流或只有终端记录的会话也可以删除。停止失败时，命令会报告错误并保留工作流缓存与绑定。
 
-`--workflow`、`--harness` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run` 和 `list`。
+默认会话 `default`、项目文件，以及 Agent 自行管理的配置和对话记录会保留。Windows 上需先退出运行中的工作流，再删除会话。
+
+`--workflow`、`--harness` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run`、`list`、`stop` 和 `delete`。
 
 ### 诊断日志
 

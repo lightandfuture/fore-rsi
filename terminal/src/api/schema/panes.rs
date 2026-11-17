@@ -19,6 +19,23 @@ pub enum PaneRightClickTarget {
 }
 
 crate::cli::projection::cli_params! {
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+    pub struct PaneEnsureParams => PaneEnsureProjection {
+        /// Stable pane identity within this terminal session.
+        pub key: String => Field::new(String::new()).input(binding::text("key", "KEY").required()),
+        /// Place a new pane here; existing panes retain their location.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub workspace_id: Option<String> => Field::new(None).input(super::tabs::workspace_option("WORKSPACE_ID")),
+        pub cwd: String => Field::new(String::new()).input(binding::text("cwd", "PATH").path().required()),
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub label: Option<String> => Field::new(None).input(binding::optional_text("label", "TEXT")),
+        /// Omit the command to create a regular shell pane with native agent restore.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub argv: Vec<String> => Field::new(Vec::new()).input(binding::managed_command()),
+    }
+}
+
+crate::cli::projection::cli_params! {
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
     pub struct PaneSplitParams => PaneSplitProjection {
         #[serde(default, skip_serializing_if = "Option::is_none")]

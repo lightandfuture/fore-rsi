@@ -204,6 +204,7 @@ herdr tab close <tab_id>
 
 ```bash
 herdr pane list [--workspace <workspace_id>]
+herdr pane ensure --key KEY --cwd PATH [--workspace ID] [--label TEXT] [-- COMMAND [ARG ...]]
 herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 herdr pane layout [--pane ID|--current]
@@ -222,6 +223,8 @@ herdr pane move <pane_id> --new-tab [--workspace ID] [--label TEXT] [--focus|--n
 herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--focus|--no-focus]
 herdr pane close <pane_id>
 ```
+
+`pane ensure` 按会话内的 key 复用窗格，改名或移动不影响查找。`--workspace` 只指定新窗格建在哪里，不会移动已有窗格或切换焦点。空会话未指定工作区时，新工作区的首个标签页获得焦点。省略命令会打开普通 shell，沿用原生 Agent 会话恢复机制；显式传入的命令会直接运行，恢复布局时重新启动，命令退出时关闭窗格。已保存的窗格不可用时会报告错误，不另建副本。
 
 接受 `--current` 的窗格命令在 Herdr 窗格内运行时使用调用方的 `HERDR_PANE_ID`。对 `pane split` 而言，显式窗格 ID 或 `--pane ID` 拆分指定窗格。省略目标时，若存在 `HERDR_PANE_ID` 则拆分调用方窗格，否则使用当前聚焦的窗格。`--current` 必须有调用方窗格；缺少 `HERDR_PANE_ID` 时会报错。拆分响应中的新窗格 ID 位于 `.result.pane.pane_id`。
 

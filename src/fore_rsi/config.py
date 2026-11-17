@@ -8,13 +8,25 @@ import os
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
+from platformdirs import user_state_path
 from tyro.conf import Positional, arg
+
+
+@dataclass
+class HarnessConfig:
+    """Execution settings supplied by workflows when constructing an agent runtime."""
+
+    # Select the native execution backend.
+    harness: str = "pi"
+    # None preserves the selected harness's model settings.
+    model: str | None = None
 
 
 @dataclass
 class WorkflowConfig:
     """Task and agent execution."""
 
+    GLOBAL_WORKGROUP_NAME: ClassVar[str] = "global"
     SESSIONS_DIR_NAME: ClassVar[str] = "workflows"
     SESSION_RECORD_NAME: ClassVar[str] = "workflow.json"
     # Interval between host-exit checks while stopping a workflow.
@@ -24,8 +36,8 @@ class WorkflowConfig:
     workflow_name: Annotated[str, arg(name="workflow", prefix_name=False)] = "default"
     # Markdown task file.
     task: Annotated[Path | None, arg(prefix_name=False)] = None
-    # Select the workflow's agent execution backend.
-    harness: Annotated[str | None, arg(prefix_name=False)] = None
+    # Select the agent execution backend: pi, codex, or claude (Claude Code).
+    harness: Annotated[str, arg(prefix_name=False)] = HarnessConfig.harness
 
 
 @dataclass
@@ -48,12 +60,19 @@ class Config:
     """User inputs and internal settings for ForeRSI session commands."""
 
     TERMINAL_EXECUTABLE_NAME: ClassVar[str] = "_terminal.exe" if os.name == "nt" else "_terminal"
+    DEFAULT_SESSION_NAME: ClassVar[str] = "default"
+    WORK_PROGRESS_PANE_KEY: ClassVar[str] = "fore-rsi.work-progress"
+    WORK_PROGRESS_LABEL: ClassVar[str] = "Work progress"
+    SESSION_INDEX_PATH: ClassVar[Path] = (
+        user_state_path("fore-rsi", appauthor=False) / "sessions.sqlite3"
+    )
 
-    # Run or resume a session, list sessions, or delete a stopped session.
-    session_action: Positional[Literal["run", "list", "delete"]] = "run"
+    # Run or resume, list, stop, delete a session, or open its work-progress page.
+    session_action: Positional[Literal["run", "list", "stop", "delete", "workprogress"]] = "run"
     # Select the ForeRSI session shared by its workflow and interface.
     session: Annotated[str | None, arg(prefix_name=False)] = None
-    # Local runtime data, relative to the project Git root or startup directory outside Git.
+    # Initial workflow storage, relative to the project Git root or startup directory outside Git.
+    # Existing sessions reuse their saved location.
     cache_dir: Annotated[Path, arg(name="cache-dir", prefix_name=False)] = Path("./cache")
 
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)

@@ -8,33 +8,42 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import tempfile
 
 import psutil
 
-from fore_rsi.config import WorkflowConfig
+from fore_rsi.config import Config, WorkflowConfig
 from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
-from fore_rsi.rsi_workflows.runtimes.run_state import WorkflowState
+from fore_rsi.rsi_workflows.workflow_runtimes.run_state import WorkflowState
 
 
 class WorkflowRunner:
     """Manage the execution lifecycle of one workflow."""
 
     def __init__(
-        self, workflow: BaseWorkflow, session_name: str | None, cache_dir: Path
+        self,
+        workflow_class: type[BaseWorkflow],
+        workflow_config: WorkflowConfig,
+        session_name: str | None,
+        cache_dir: Path,
     ) -> None:
-        """Bind the workflow, session name, and resolved cache directory without starting execution."""
-        self.workflow = workflow
-        self.session_name = session_name
-        self._sessions_dir = cache_dir / WorkflowConfig.SESSIONS_DIR_NAME
+        """Resolve session storage and construct the selected workflow without starting execution."""
+        self.session_name = session_name if session_name is not None else Config.DEFAULT_SESSION_NAME
+        self._record_path = self._session_record_path(
+            cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, self.session_name
+        )
+        self.workflow = workflow_class(
+            workflow_config, session_directory=self._record_path.parent
+        )
 
-    async def run(self) -> None:
-        """Record execution state and its final outcome after workflow cleanup, preserving exceptions."""
+    async def run(self, workspace_id: str) -> None:
+        """Run in the prepared workspace and record the outcome after workflow cleanup."""
         # Keep one process identity across all state updates for this invocation.
         process = psutil.Process()
         self._write_session_record(WorkflowState.RUNNING, process)
         try:
-            await self.workflow.run()
+            await self.workflow.run(workspace_id)
         except asyncio.CancelledError:
             self._write_session_record(WorkflowState.STOPPED, process)
             raise
@@ -81,6 +90,7 @@ class WorkflowRunner:
         Session-management callers retain the record and all workflow data. A
         missing record returns None; finished runs are left alone. Active hosts
         use POSIX termination signals, and cancellation stops only the wait.
+        A failed or interrupted shutdown raises an error and retains its record.
         """
         record_path = WorkflowRunner._session_record_path(
             cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, session_name
@@ -129,9 +139,27 @@ class WorkflowRunner:
             or final_record.get("process_created_at") != created_at
         ):
             raise RuntimeError(f"Workflow session {session_name!r} changed while stopping.")
-        return WorkflowRunner._observe_workflow_state(
+        final_state = WorkflowRunner._observe_workflow_state(
             WorkflowState(final_record["state"]), pid, created_at
         )
+        if process is not None and final_state not in (WorkflowState.STOPPED, WorkflowState.COMPLETED):
+            raise RuntimeError(
+                f"Workflow session {session_name!r} ended as {final_state.value!r} during shutdown."
+            )
+        return final_state
+
+    @staticmethod
+    async def delete_workflow_session(session_name: str, cache_dir: Path) -> None:
+        """Stop a registered workflow and remove only its session directory; missing records are unchanged."""
+        if await WorkflowRunner.stop_workflow_session(session_name, cache_dir) is None:
+            return
+        record_path = WorkflowRunner._session_record_path(
+            cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, session_name
+        )
+        try:
+            shutil.rmtree(record_path.parent)
+        except FileNotFoundError:
+            pass
 
     @staticmethod
     def _observe_workflow_state(
@@ -172,12 +200,11 @@ class WorkflowRunner:
 
     def _write_session_record(self, state: WorkflowState, process: psutil.Process) -> None:
         """Publish the workflow identity, host process, and state as one complete session record."""
-        session_name = self.session_name if self.session_name is not None else "default"
-        record_path = self._session_record_path(self._sessions_dir, session_name)
+        record_path = self._record_path
         session_dir = record_path.parent
         session_dir.mkdir(parents=True, exist_ok=True)
         record = {
-            "session_name": session_name,
+            "session_name": self.session_name,
             "workflow_name": self.workflow.workflow_name,
             "state": state,
             "pid": process.pid,

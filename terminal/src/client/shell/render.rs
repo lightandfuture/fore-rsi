@@ -253,6 +253,39 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) workspace_drop_indicator_row: Option<u16>,
 }
 
+/// Lay out the pinned shortcut and the scrollable tree as one sidebar in every client view.
+pub(super) fn render_sidebar_panel(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    state: &mut ShellRenderState<'_>,
+    hits: &mut ShellHitMap,
+) {
+    let tree =
+        sidebar_fore_rsi::render_progress_shortcut(buffer, area, snapshot, config, state, hits);
+    match (state.endpoints.len() > 1, state.sidebar_collapsed) {
+        (true, true) => {
+            super::endpoint_sidebar::render_collapsed(buffer, tree, config, state, hits)
+        }
+        (true, false) => render_endpoint_sidebar(buffer, tree, config, state, hits),
+        (false, true) => render_collapsed_sidebar(
+            buffer,
+            tree,
+            snapshot,
+            config,
+            state
+                .selected_workspace_id
+                .map(|target| target.workspace_id.as_str()),
+            hits,
+        ),
+        (false, false) => render_sidebar(buffer, tree, snapshot, config, state, hits),
+    }
+    if !hits.sidebar_divider.is_empty() {
+        hits.sidebar_divider = Rect::new(area.right() - 1, area.y, 1, area.height);
+    }
+}
+
 pub(super) fn render_shell(
     buffer: &mut Buffer,
     layout: ClientShellLayout,
@@ -271,39 +304,14 @@ pub(super) fn render_shell(
         );
     }
     if layout.sidebar.width > 0 {
-        if state.endpoints.len() > 1 {
-            if state.sidebar_collapsed {
-                super::endpoint_sidebar::render_collapsed(
-                    buffer,
-                    layout.sidebar,
-                    config,
-                    &mut state,
-                    &mut hits,
-                );
-            } else {
-                render_endpoint_sidebar(buffer, layout.sidebar, config, &mut state, &mut hits);
-            }
-        } else if state.sidebar_collapsed {
-            render_collapsed_sidebar(
-                buffer,
-                layout.sidebar,
-                snapshot,
-                config,
-                state
-                    .selected_workspace_id
-                    .map(|target| target.workspace_id.as_str()),
-                &mut hits,
-            );
-        } else {
-            render_sidebar(
-                buffer,
-                layout.sidebar,
-                snapshot,
-                config,
-                &mut state,
-                &mut hits,
-            );
-        }
+        render_sidebar_panel(
+            buffer,
+            layout.sidebar,
+            snapshot,
+            config,
+            &mut state,
+            &mut hits,
+        );
     }
     if layout.tab_bar.height > 0 {
         render_tab_bar(

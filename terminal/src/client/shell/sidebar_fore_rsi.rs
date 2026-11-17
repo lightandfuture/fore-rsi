@@ -19,6 +19,8 @@ use crate::protocol::{ClientShellAgent, ClientShellPane};
 
 const GROUP_TOKEN: &str = "fore_rsi_group";
 const GROUP_ORDER_TOKEN: &str = "fore_rsi_group_order";
+const MEMBER_TOKEN: &str = "fore_rsi_member";
+const ENTRY_TOKEN: &str = "fore_rsi_entry";
 const VIEW_TOKEN: &str = "fore_rsi_view";
 const STATE_TOKEN: &str = "fore_rsi_state";
 
@@ -30,13 +32,24 @@ pub(crate) struct SidebarLabels {
     pub(crate) menu: &'static str,
 }
 
-/// Workflow metadata projected into one group and its display order.
-///
-/// `None` represents a pane directly under its workspace. The value is kept
-/// separate from a group label so workflow data can use any string safely.
-struct ForeRsiGroup {
-    label: Option<String>,
+/// Pane identity is available before the harness has been detected as an agent.
+#[derive(Clone, Copy)]
+struct Member<'a> {
+    pane: &'a ClientShellPane,
+    agent: Option<&'a ClientShellAgent>,
+}
+
+impl<'a> Member<'a> {
+    fn token(self, key: &str) -> Option<&'a str> {
+        token(&self.pane.tokens, key).or_else(|| token(&self.agent?.tokens, key))
+    }
+}
+
+#[derive(Default)]
+struct ForeRsiGroup<'a> {
     order: Option<u64>,
+    has_entry: bool,
+    members: Vec<Member<'a>>,
 }
 
 /// Rows in the unified workspace → group → pane tree.
@@ -46,12 +59,11 @@ enum NavigationRow<'a> {
         workspace: &'a ClientShellWorkspace,
     },
     Group {
-        label: String,
+        label: &'a str,
         depth: u16,
     },
-    Agent {
-        pane: &'a ClientShellPane,
-        agent: Option<&'a ClientShellAgent>,
+    Member {
+        member: Member<'a>,
         depth: u16,
     },
 }
@@ -92,115 +104,169 @@ impl SidebarLabels {
     }
 }
 
-/// Read one workflow-owned token from the live Agent projection.
-fn agent_token<'a>(agent: Option<&'a ClientShellAgent>, key: &str) -> Option<&'a str> {
-    agent?
-        .tokens
+fn token<'a>(tokens: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    tokens
         .iter()
         .find(|(name, _)| name == key)
         .map(|(_, value)| value.as_str())
 }
 
-/// Resolve group membership without interpreting role names in the terminal client.
-fn group_name(agent: Option<&ClientShellAgent>) -> Option<String> {
-    if agent_token(agent, VIEW_TOKEN) == Some("progress") {
-        return None;
-    }
-    agent_token(agent, GROUP_TOKEN)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
+/// Find the progress view independently of whether a harness is detected in its pane.
+pub(in crate::client::shell) fn progress_pane(
+    snapshot: &ClientShellSnapshot,
+) -> Option<&ClientShellPane> {
+    snapshot
+        .panes
+        .iter()
+        .find(|pane| token(&pane.tokens, VIEW_TOKEN) == Some("progress"))
+        .or_else(|| {
+            // Older endpoints expose tokens on detected agents only.
+            let agent = snapshot
+                .agents
+                .iter()
+                .find(|agent| token(&agent.tokens, VIEW_TOKEN) == Some("progress"))?;
+            snapshot
+                .panes
+                .iter()
+                .find(|pane| pane.pane_id == agent.pane_id)
+        })
 }
 
-fn group_order(agent: Option<&ClientShellAgent>) -> Option<u64> {
-    agent_token(agent, GROUP_ORDER_TOKEN).and_then(|value| value.parse().ok())
-}
-
-/// Collect workflow groups belonging to one workspace.
-fn groups_for_workspace(
+/// Reserve the progress row outside the scrollable workspace tree and register its real focus target.
+pub(super) fn render_progress_shortcut(
+    buffer: &mut Buffer,
+    area: Rect,
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
-    workspace_id: &str,
-) -> Vec<ForeRsiGroup> {
-    let mut groups = BTreeMap::<Option<String>, ForeRsiGroup>::new();
-    for pane_id in ordered_agent_pane_ids(snapshot, config.agent_panel_sort) {
-        let Some(agent) = snapshot
-            .agents
-            .iter()
-            .find(|agent| agent.pane_id == pane_id && agent.workspace_id == workspace_id)
-        else {
-            continue;
-        };
-        let group = group_name(Some(agent));
-        let order = group_order(Some(agent));
-        let group_state = groups.entry(group.clone()).or_insert_with(|| ForeRsiGroup {
-            label: group,
-            order,
-        });
-        if group_state.order.is_none() {
-            group_state.order = order;
-        }
+    state: &ShellRenderState<'_>,
+    hits: &mut ShellHitMap,
+) -> Rect {
+    let Some(pane) = progress_pane(snapshot) else {
+        return area;
+    };
+    if area.width <= 1 || area.height <= 1 {
+        return area;
     }
-
-    let mut groups = groups.into_values().collect::<Vec<_>>();
-    groups.sort_by(|left, right| {
-        left.label
-            .is_some()
-            .cmp(&right.label.is_some())
-            .then_with(|| {
-                left.order
-                    .unwrap_or(u64::MAX)
-                    .cmp(&right.order.unwrap_or(u64::MAX))
-            })
-            .then_with(|| left.label.cmp(&right.label))
-    });
-    groups
+    let height = if area.height >= 4 { 2 } else { 1 };
+    render_sidebar_background(
+        buffer,
+        Rect::new(area.x, area.y, area.width, height),
+        &config.palette,
+    );
+    let row = Rect::new(area.x, area.y, area.width - 1, 1);
+    if pane.focused {
+        buffer.set_style(row, Style::default().bg(config.palette.active_row_bg));
+    }
+    put_text(
+        buffer,
+        row.x,
+        row.y,
+        row.width,
+        config.fore_rsi_labels.progress,
+        Style::default()
+            .fg(config.palette.text)
+            .add_modifier(Modifier::BOLD),
+    );
+    if height == 2 {
+        put_text(
+            buffer,
+            row.x,
+            row.y + 1,
+            row.width,
+            &"─".repeat(row.width as usize),
+            Style::default().fg(config.palette.surface_dim),
+        );
+    }
+    if state.endpoints.len() > 1 {
+        hits.endpoint_agents
+            .push((row, state.active_endpoint_id.clone(), pane.pane_id.clone()));
+    } else {
+        hits.agents.push((row, pane.pane_id.clone()));
+    }
+    Rect::new(area.x, area.y + height, area.width, area.height - height)
 }
 
-/// Build the complete workspace → group → Agent tree for one render pass.
+/// Project each pane into its actual workspace and group once. The entry reference only
+/// affects ordering; it never replaces the member's name or creates a second row.
 fn navigation_rows<'a>(
     snapshot: &'a ClientShellSnapshot,
     config: &ClientShellConfig,
     collapsed_groups: &HashSet<String>,
 ) -> Vec<NavigationRow<'a>> {
-    let agents = snapshot
+    let agents: HashMap<_, _> = snapshot
         .agents
         .iter()
-        .map(|agent| (agent.pane_id.as_str(), agent))
-        .collect::<HashMap<_, _>>();
+        .map(|a| (a.pane_id.as_str(), a))
+        .collect();
+    let ranks: HashMap<_, _> = ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+        .into_iter()
+        .enumerate()
+        .map(|(rank, id)| (id, rank))
+        .collect();
+    let entries: HashSet<_> = snapshot
+        .workspaces
+        .iter()
+        .filter_map(|w| token(&w.tokens, ENTRY_TOKEN))
+        .collect();
+    let mut by_workspace = HashMap::<&str, BTreeMap<Option<&str>, ForeRsiGroup>>::new();
+    for pane in &snapshot.panes {
+        let member = Member {
+            pane,
+            agent: agents.get(pane.pane_id.as_str()).copied(),
+        };
+        let label = member.token(GROUP_TOKEN);
+        let entry = entries.contains(pane.terminal_id.as_str());
+        let declared_member = label.is_some() && snapshot.agent_view_label.is_none();
+        let visible = entry || declared_member || ranks.contains_key(&pane.pane_id);
+        if !visible || member.token(VIEW_TOKEN) == Some("progress") {
+            continue;
+        }
+        let group = by_workspace
+            .entry(&pane.workspace_id)
+            .or_default()
+            .entry(label)
+            .or_default();
+        group.has_entry |= entry;
+        if let Some(order) = member
+            .token(GROUP_ORDER_TOKEN)
+            .and_then(|s| s.parse::<u64>().ok())
+        {
+            group.order = Some(group.order.map_or(order, |current| current.min(order)));
+        }
+        group.members.push(member);
+    }
+
     let mut rows = Vec::new();
     for entry in workspace_entries(snapshot, collapsed_groups) {
         let Some(workspace) = snapshot.workspaces.get(entry.index) else {
             continue;
         };
+        let depth = u16::from(entry.indented) + 1;
         rows.push(NavigationRow::Workspace { entry, workspace });
-        let workspace_depth = u16::from(entry.indented);
-        for group in groups_for_workspace(snapshot, config, &workspace.workspace_id) {
-            let direct_members = group.label.is_none();
-            let agent_depth = workspace_depth + u16::from(!direct_members) + 1;
-            if let Some(group_label) = group.label.as_ref() {
-                rows.push(NavigationRow::Group {
-                    label: group_label.clone(),
-                    depth: workspace_depth + 1,
-                });
+        let Some(groups) = by_workspace.remove(workspace.workspace_id.as_str()) else {
+            continue;
+        };
+        let mut groups = groups.into_iter().collect::<Vec<_>>();
+        groups.sort_by_key(|(label, g)| (!g.has_entry, g.order.unwrap_or(u64::MAX), *label));
+        for (label, mut group) in groups {
+            if let Some(label) = label {
+                rows.push(NavigationRow::Group { label, depth });
             }
-            for pane_id in ordered_agent_pane_ids(snapshot, config.agent_panel_sort) {
-                let Some(pane) = snapshot.panes.iter().find(|pane| {
-                    pane.pane_id == pane_id && pane.workspace_id == workspace.workspace_id
-                }) else {
-                    continue;
-                };
-                let Some(agent) = agents.get(pane.pane_id.as_str()).copied() else {
-                    continue;
-                };
-                let pane_group = group_name(Some(agent));
-                if pane_group == group.label {
-                    rows.push(NavigationRow::Agent {
-                        pane,
-                        agent: Some(agent),
-                        depth: agent_depth,
-                    });
-                }
-            }
+            group.members.sort_by_key(|m| {
+                (
+                    !entries.contains(m.pane.terminal_id.as_str()),
+                    ranks.get(&m.pane.pane_id).copied().unwrap_or(usize::MAX),
+                )
+            });
+            rows.extend(
+                group
+                    .members
+                    .into_iter()
+                    .map(|member| NavigationRow::Member {
+                        member,
+                        depth: depth + u16::from(label.is_some()),
+                    }),
+            );
         }
     }
     rows
@@ -258,14 +324,11 @@ pub(crate) fn reveal_endpoint_pane(
         .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
         .and_then(|endpoint| endpoint.snapshot.as_deref())
         .and_then(|snapshot| {
-            let agent = snapshot
-                .agents
-                .iter()
-                .find(|agent| agent.pane_id == pane_id)?;
+            let pane = snapshot.panes.iter().find(|pane| pane.pane_id == pane_id)?;
             let workspace = snapshot
                 .workspaces
                 .iter()
-                .find(|workspace| workspace.workspace_id == agent.workspace_id)?;
+                .find(|workspace| workspace.workspace_id == pane.workspace_id)?;
             workspace
                 .worktree
                 .as_ref()
@@ -295,8 +358,8 @@ pub(crate) fn reveal_endpoint_pane(
             row,
             EndpointNavigationRow::Content {
                 endpoint,
-                row: NavigationRow::Agent { pane, .. },
-            } if &endpoint.endpoint_id == endpoint_id && pane.pane_id == pane_id
+                row: NavigationRow::Member { member, .. },
+            } if &endpoint.endpoint_id == endpoint_id && member.pane.pane_id == pane_id
         )
     })
 }
@@ -370,7 +433,8 @@ fn render_row(
                     .add_modifier(Modifier::BOLD),
             );
         }
-        NavigationRow::Agent { pane, agent, depth } => {
+        NavigationRow::Member { member, depth } => {
+            let Member { pane, agent } = *member;
             let x = rect.x.saturating_add(depth.saturating_mul(2));
             let content = Rect::new(
                 x,
@@ -378,11 +442,10 @@ fn render_row(
                 rect.width.saturating_sub(x.saturating_sub(rect.x)),
                 rect.height,
             );
-            let label = if agent_token(*agent, VIEW_TOKEN) == Some("progress") {
-                context.config.fore_rsi_labels.progress
-            } else {
-                agent
-                    .and_then(|agent| {
+            let label = member
+                .token(MEMBER_TOKEN)
+                .or_else(|| {
+                    agent.and_then(|agent| {
                         agent
                             .display_agent
                             .as_deref()
@@ -390,10 +453,10 @@ fn render_row(
                             .or(agent.agent.as_deref())
                             .or(agent.title.as_deref())
                     })
-                    .or(pane.label.as_deref())
-                    .unwrap_or(context.config.fore_rsi_labels.terminal)
-            };
-            let state_style = match agent_token(*agent, STATE_TOKEN) {
+                })
+                .or(pane.label.as_deref())
+                .unwrap_or(context.config.fore_rsi_labels.terminal);
+            let state_style = match member.token(STATE_TOKEN) {
                 Some("retired") => Style::default().fg(palette.overlay0),
                 Some("working") => Style::default().fg(palette.green),
                 Some("sleeping") => Style::default().fg(palette.overlay1),
@@ -475,7 +538,7 @@ pub(crate) fn render_sidebar(
             )
             .len()
             .max(1),
-            NavigationRow::Group { .. } | NavigationRow::Agent { .. } => 1,
+            NavigationRow::Group { .. } | NavigationRow::Member { .. } => 1,
         })
         .map(|height| height.min(u16::MAX as usize) as u16)
         .collect::<Vec<_>>();
@@ -503,7 +566,7 @@ pub(crate) fn render_sidebar(
                     workspace.focused
                 }
             }
-            NavigationRow::Agent { pane, .. } => reveal_focused && pane.focused,
+            NavigationRow::Member { member, .. } => reveal_focused && member.pane.focused,
             NavigationRow::Group { .. } => false,
         });
         if let Some(target) = target {
@@ -539,7 +602,7 @@ pub(crate) fn render_sidebar(
                 }),
                 state.dragged_workspace_id == Some(workspace.workspace_id.as_str()),
             ),
-            NavigationRow::Group { .. } | NavigationRow::Agent { .. } => (false, false),
+            NavigationRow::Group { .. } | NavigationRow::Member { .. } => (false, false),
         };
         let context = RowRenderContext {
             endpoint_id: &ClientEndpointId::Local,
@@ -660,7 +723,7 @@ pub(crate) fn render_endpoint_sidebar(
                     .max(1)
                     .min(u16::MAX as usize) as u16
                 }
-                NavigationRow::Group { .. } | NavigationRow::Agent { .. } => 1,
+                NavigationRow::Group { .. } | NavigationRow::Member { .. } => 1,
             },
         })
         .collect::<Vec<_>>();
@@ -700,7 +763,7 @@ pub(crate) fn render_endpoint_sidebar(
                         endpoint.endpoint_id == *state.active_endpoint_id && workspace.focused
                     }
                 }
-                NavigationRow::Group { .. } | NavigationRow::Agent { .. } => false,
+                NavigationRow::Group { .. } | NavigationRow::Member { .. } => false,
             },
         });
         if let Some(target) = target {
@@ -770,7 +833,7 @@ pub(crate) fn render_endpoint_sidebar(
                             target.matches(&endpoint.endpoint_id, &workspace.workspace_id)
                         })
                     }
-                    NavigationRow::Group { .. } | NavigationRow::Agent { .. } => false,
+                    NavigationRow::Group { .. } | NavigationRow::Member { .. } => false,
                 };
                 let context = RowRenderContext {
                     endpoint_id: &endpoint.endpoint_id,

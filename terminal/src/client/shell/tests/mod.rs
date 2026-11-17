@@ -52,6 +52,8 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
             agent_status: AgentStatus::Idle,
         }],
         panes: vec![ClientShellPane {
+            terminal_id: "term_1".into(),
+            tokens: Vec::new(),
             pane_id: "pane_1".into(),
             workspace_id: "ws_1".into(),
             tab_id: "tab_1".into(),

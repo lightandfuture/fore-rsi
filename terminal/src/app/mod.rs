@@ -71,6 +71,8 @@ pub(crate) struct OverlayPaneState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AppPolicy {
+    /// Standalone Herdr supplies a shell in an empty session; ForeRSI supplies its own panes.
+    pub(crate) auto_shell_workspace: bool,
     pub(crate) restore_session: bool,
     pub(crate) persist_session: bool,
     pub(crate) persist_plugin_registry: bool,
@@ -79,6 +81,7 @@ pub(crate) struct AppPolicy {
 
 impl AppPolicy {
     pub(crate) const PRODUCTION: Self = Self {
+        auto_shell_workspace: crate::build_info::FORE_RSI_VERSION.is_none(),
         restore_session: true,
         persist_session: true,
         persist_plugin_registry: true,
@@ -87,6 +90,7 @@ impl AppPolicy {
 
     #[cfg(test)]
     pub(crate) const TEST: Self = Self {
+        auto_shell_workspace: true,
         restore_session: false,
         persist_session: false,
         persist_plugin_registry: false,
@@ -96,9 +100,7 @@ impl AppPolicy {
     #[cfg(unix)]
     pub(crate) const HANDOFF_REPLACEMENT: Self = Self {
         restore_session: false,
-        persist_session: true,
-        persist_plugin_registry: true,
-        background_updates: true,
+        ..Self::PRODUCTION
     };
 }
 
@@ -770,7 +772,7 @@ impl App {
     }
 
     pub(crate) fn ensure_default_workspace(&mut self) -> bool {
-        if !self.state.workspaces.is_empty() {
+        if !self.policy.auto_shell_workspace || !self.state.workspaces.is_empty() {
             return false;
         }
 

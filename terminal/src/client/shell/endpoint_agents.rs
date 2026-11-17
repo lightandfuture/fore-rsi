@@ -9,8 +9,17 @@ pub(super) fn render_collapsed(
     config: &ClientShellConfig,
     hits: &mut ShellHitMap,
 ) {
-    let rows = agent_rows(endpoints, active_endpoint_id, config);
-    for (index, row) in rows.into_iter().take(area.height as usize).enumerate() {
+    let progress = endpoints
+        .iter()
+        .find(|e| &e.endpoint_id == active_endpoint_id)
+        .and_then(|e| super::render::sidebar_fore_rsi::progress_pane(e.snapshot.as_deref()?));
+    let rows = agent_rows(endpoints, active_endpoint_id, config)
+        .into_iter()
+        .filter(|row| {
+            &row.endpoint_id != active_endpoint_id
+                || progress.is_none_or(|p| p.pane_id != row.agent.pane_id)
+        });
+    for (index, row) in rows.take(area.height as usize).enumerate() {
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
         if row.agent.focused {
             buffer.set_style(rect, Style::default().bg(config.palette.active_row_bg));

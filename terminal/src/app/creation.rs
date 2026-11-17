@@ -120,17 +120,19 @@ impl App {
         initial_cwd: PathBuf,
         focus: bool,
     ) -> std::io::Result<usize> {
-        self.create_workspace_with_launch_env(initial_cwd, focus, Vec::new())
+        self.create_workspace(initial_cwd, focus, None, Vec::new())
     }
 
-    pub(crate) fn create_workspace_with_launch_env(
+    /// Open a workspace with the requested first process and register its root terminal on success.
+    pub(super) fn create_workspace(
         &mut self,
         initial_cwd: PathBuf,
         focus: bool,
+        root_argv: Option<&[String]>,
         extra_env: Vec<(String, String)>,
     ) -> std::io::Result<usize> {
         let (rows, cols) = self.state.new_pane_size(crate::ui::NewPanePlacement::Alone);
-        let (ws, terminal, runtime) = Workspace::new_with_extra_env(
+        let (ws, terminal, runtime) = Workspace::new(
             initial_cwd,
             rows,
             cols,
@@ -141,6 +143,7 @@ impl App {
             self.event_tx.clone(),
             self.render_notify.clone(),
             self.render_dirty.clone(),
+            root_argv,
             extra_env,
         )?;
         self.terminal_runtimes.insert(terminal.id.clone(), runtime);

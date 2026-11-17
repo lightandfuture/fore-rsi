@@ -121,6 +121,8 @@ fore-rsi --workflow inference \
   --session sglang-throughput
 ```
 
+ForeRSI reuses an installed CLI or runs the selected backend's official installer when needed. Follow any installer prompts to prepare dependencies; sign in through the native tool when authentication is required.
+
 You can also [design a custom RSI workflow](#design-a-custom-rsi-workflow) with the roles, tools, execution steps, and evaluation criteria your task needs. See the [CLI reference](docs/cli.md) for options, or run `fore-rsi --help`.
 
 ### Provide a task
@@ -146,7 +148,7 @@ Replace the path with your own task file as needed. Relative paths are resolved 
 
 ### Exit and resume
 
-Press `Ctrl+B`, release it, then press `q` to exit. ForeRSI cancels the workflow and waits for its cleanup, keeping the background terminal server, session data, and conversation history. Terminal hangup (`SIGHUP`) and termination (`SIGTERM`) signals use the same exit path. Inside an agent conversation, `Ctrl+C` interrupts the current turn.
+Press `Ctrl+B`, release it, then press `q` to exit. Inside an agent conversation, `Ctrl+C` interrupts the current turn.
 
 List sessions with their workflow names, workflow states, and terminal server status:
 
@@ -162,15 +164,21 @@ fore-rsi --session sglang-throughput
 
 The session resumes its saved workflow and task progress. You do not need to pass `--task` again.
 
+### Stop a session
+
+Stop a session while keeping its data:
+
+```bash
+fore-rsi stop --session sglang-throughput
+```
+
 ### Delete a session
 
-Delete a named terminal session when you no longer need it:
+Delete a named session when you no longer need it:
 
 ```bash
 fore-rsi delete --session sglang-throughput
 ```
-
-The command stops its terminal server before removing the session's terminal data. Workflow records in the cache, project files, and agent-owned configuration and conversation history are retained.
 
 ## The improvement loop
 

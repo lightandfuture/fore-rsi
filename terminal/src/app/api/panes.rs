@@ -3,7 +3,7 @@ use bytes::Bytes;
 use crate::api::schema::{
     EventData, EventEnvelope, EventKind, PaneClearAgentAuthorityParams, PaneCopyMotion,
     PaneCopyMotionParams, PaneCopySearchDirection, PaneCopySearchParams, PaneCurrentParams,
-    PaneDirection, PaneEdgesParams, PaneEdgesResult, PaneFocusDirectionParams,
+    PaneDirection, PaneEdgesParams, PaneEdgesResult, PaneEnsureParams, PaneFocusDirectionParams,
     PaneFocusDirectionReason, PaneFocusDirectionResult, PaneInfo, PaneInputSetParams,
     PaneLayoutPane, PaneLayoutParams, PaneLayoutRect, PaneLayoutSnapshot, PaneLayoutSplit,
     PaneListParams, PaneMoveDestination, PaneMoveParams, PaneMoveReason, PaneMoveResult,
@@ -31,6 +31,125 @@ use super::super::api_helpers::{METADATA_SOURCE_MAX_CHARS, METADATA_TTL_MAX_MS};
 use super::responses::{encode_error, encode_success};
 
 impl App {
+    /// Reconcile one session-owned pane atomically on the server event loop.
+    pub(super) fn handle_pane_ensure(&mut self, id: String, params: PaneEnsureParams) -> String {
+        if params.key.trim().is_empty() || params.argv.first().is_some_and(String::is_empty) {
+            return encode_error(
+                id,
+                "invalid_params",
+                "pane key and supplied executable must be nonempty",
+            );
+        }
+
+        // The key belongs to the terminal, so moving its pane does not change ownership.
+        for (ws_idx, workspace) in self.state.workspaces.iter().enumerate() {
+            for tab in &workspace.tabs {
+                for (pane_id, pane) in &tab.panes {
+                    let Some(terminal) = self.state.terminals.get(&pane.attached_terminal_id)
+                    else {
+                        continue;
+                    };
+                    if terminal.managed_key.as_deref() != Some(params.key.as_str()) {
+                        continue;
+                    }
+                    if let Some(error) = terminal.restore_error.as_deref() {
+                        return encode_error(id, "pane_unavailable", error);
+                    }
+                    if self.terminal_runtimes.get(&terminal.id).is_none()
+                        && terminal.pending_agent_resume_plan.is_none()
+                    {
+                        return encode_error(
+                            id,
+                            "pane_unavailable",
+                            "managed pane has no execution runtime",
+                        );
+                    }
+                    let pane = self
+                        .pane_info(ws_idx, *pane_id)
+                        .expect("managed pane should have metadata");
+                    return encode_success(id, ResponseResult::PaneInfo { pane });
+                }
+            }
+        }
+
+        let workspace = if let Some(workspace_id) = &params.workspace_id {
+            let Some(index) = self.parse_workspace_id(workspace_id) else {
+                return encode_error(
+                    id,
+                    "workspace_not_found",
+                    format!("workspace {workspace_id} not found"),
+                );
+            };
+            Some(index)
+        } else if self.state.workspaces.is_empty() {
+            None
+        } else {
+            Some(self.workspace_creation_source().unwrap_or(0))
+        };
+        match self.open_managed_pane(workspace, params) {
+            Ok(pane) => encode_success(id, ResponseResult::PaneInfo { pane }),
+            Err(error) => encode_error(id, "pane_ensure_failed", error.to_string()),
+        }
+    }
+
+    /// Start the requested process in the first tab of a new workspace or append a tab without focusing it.
+    fn open_managed_pane(
+        &mut self,
+        workspace: Option<usize>,
+        params: PaneEnsureParams,
+    ) -> std::io::Result<PaneInfo> {
+        let cwd = params.cwd.into();
+        let argv = (!params.argv.is_empty()).then_some(params.argv.as_slice());
+        let (ws_idx, tab_idx) = if let Some(ws_idx) = workspace {
+            let (rows, cols) = self.state.new_pane_size(crate::ui::NewPanePlacement::Alone);
+            let appearance = self.pane_host_terminal_appearance();
+            let shell =
+                crate::pane::PaneShellConfig::new(&self.state.default_shell, self.state.shell_mode);
+            let (tab_idx, terminal, runtime) = self.state.workspaces[ws_idx]
+                .create_tab_with_runtime(
+                    rows,
+                    cols,
+                    cwd,
+                    self.state.pane_scrollback_limit_bytes,
+                    self.state.host_terminal_theme,
+                    appearance,
+                    shell,
+                    argv,
+                    Vec::new(),
+                )?;
+            self.terminal_runtimes.insert(terminal.id.clone(), runtime);
+            self.state.terminals.insert(terminal.id.clone(), terminal);
+            let pane_id = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
+            self.state.remove_alias_shadowed_by_new_pane(pane_id);
+            self.schedule_session_save();
+            (ws_idx, tab_idx)
+        } else {
+            (self.create_workspace(cwd, true, argv, Vec::new())?, 0)
+        };
+
+        let tab = &mut self.state.workspaces[ws_idx].tabs[tab_idx];
+        let pane_id = tab.root_pane;
+        let terminal = self
+            .state
+            .terminals
+            .get_mut(&tab.panes[&pane_id].attached_terminal_id)
+            .expect("new tab should have a registered root terminal");
+        terminal.managed_key = Some(params.key);
+        if let Some(label) = params.label {
+            tab.set_custom_name(label.clone());
+            terminal.set_manual_label(label);
+        }
+        // The workspace-open event sequence already includes its first tab and pane.
+        if workspace.is_none() {
+            self.emit_workspace_open_events(ws_idx);
+        } else {
+            self.emit_tab_created_events(ws_idx, tab_idx);
+        }
+        Ok(self
+            .pane_info(ws_idx, pane_id)
+            .expect("new managed pane should have metadata"))
+    }
+
     pub(super) fn handle_pane_split(&mut self, id: String, params: PaneSplitParams) -> String {
         let target = if let Some(target_pane_id) = params.target_pane_id.as_deref() {
             self.parse_pane_id(target_pane_id)

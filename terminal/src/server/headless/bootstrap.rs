@@ -112,6 +112,9 @@ fn seed_startup_workspace_if_empty(app: &mut app::App) {
     let Some(cwd) = take_startup_cwd() else {
         return;
     };
+    if !app.policy.auto_shell_workspace {
+        return;
+    }
 
     if !app.state.workspaces.is_empty() {
         info!(

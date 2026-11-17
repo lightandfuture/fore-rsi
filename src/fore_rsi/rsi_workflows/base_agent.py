@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Common role interface for workflow agents backed by harness sessions."""
+"""Common role interface for workflow agents backed by native harnesses."""
 
 from enum import StrEnum
 from typing import ClassVar
 
-from fore_rsi.harnesses_backend.base import AgentSession
+from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 
 
@@ -24,7 +24,7 @@ class AgentState(StrEnum):
 
 
 class BaseAgent:
-    """Base class for role-specific agents using a harness session."""
+    """Base class for role-specific agents with a bound execution runtime."""
 
     role_name: ClassVar[str]
 
@@ -32,12 +32,13 @@ class BaseAgent:
         self,
         agent_name: str,
         workgroup: Workgroup,
-        session: AgentSession,
+        agent_runtime: AgentRuntime,
     ) -> None:
-        """Bind the instance identity, workgroup, and harness session without starting execution."""
+        """Bind the instance identity, workgroup, and agent runtime without starting execution."""
         self.agent_name = agent_name
         self.workgroup = workgroup
-        self.session = session
+        self.agent_runtime = agent_runtime
+        self.system_prompt: str | None = None
         self.state = AgentState.READY
 
     def get_full_name(self) -> str:

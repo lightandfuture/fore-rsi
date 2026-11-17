@@ -62,7 +62,7 @@ type RestoredTab = (
 );
 type RestoreFailures<T> = (T, usize);
 
-/// Restore workspaces from a snapshot. Each pane gets a fresh shell in its saved cwd.
+/// Restore saved layouts, managed commands, and ordinary shells in their saved directories.
 pub fn restore(
     snapshot: &SessionSnapshot,
     history: Option<&SessionHistorySnapshot>,
@@ -451,6 +451,7 @@ fn unavailable_restored_terminal(
     if let Some(pane) = pane {
         terminal.manual_label = pane.label.clone();
         terminal.launch_argv = pane.launch_argv.clone();
+        terminal.managed_key = pane.managed_key.clone();
         if let Some(session) = restored_terminal_agent_session(pane.agent_session.as_ref(), false) {
             terminal.set_persisted_agent_session(session);
         }
@@ -538,11 +539,23 @@ fn restore_tab(
             .and_then(|pane| pane.managed_agent_kind.as_deref())
             .and_then(crate::detect::parse_canonical_agent_label);
         let saved_launch_argv = saved_pane.and_then(|p| p.launch_argv.clone());
+        let saved_managed_key = saved_pane.and_then(|p| p.managed_key.clone());
         let saved_agent_session = saved_pane.and_then(|p| p.agent_session.as_ref());
         let saved_agent_resume = saved_pane.and_then(saved_reported_resume);
         let saved_history =
             old_id.and_then(|old_id| history.and_then(|history| history.panes.get(old_id)));
-        let startup = {
+        // Keyed commands replay their argv; keyed shells use ordinary native agent restore.
+        let managed_command = saved_launch_argv
+            .as_deref()
+            .filter(|_| saved_managed_key.is_some());
+        let startup = if managed_command.is_some() {
+            PaneRestoreStartup {
+                restore_plan: None,
+                initial_history_ansi: None,
+                duplicate_agent_session: false,
+                reserved_agent_session: None,
+            }
+        } else {
             let mut agent_restore = AgentRestoreState {
                 enabled: runtime_context.resume_agents_on_restore,
                 resumed_sessions: resumed_agent_sessions,
@@ -593,6 +606,7 @@ fn restore_tab(
             let terminal_id = TerminalId::alloc();
             let mut terminal = TerminalState::new(terminal_id.clone(), cwd.clone())
                 .with_pending_agent_resume_plan(plan);
+            terminal.managed_key = saved_managed_key;
             if let Some(label) = saved_label {
                 terminal.set_manual_label(label);
             }
@@ -631,14 +645,16 @@ fn restore_tab(
             continue;
         }
 
-        let runtime_result = {
-            #[cfg(unix)]
-            if let Some(imported) = imported_runtime {
-                TerminalRuntime::from_handoff_fd(
-                    crate::handoff_runtime::ImportedHandoffRuntime {
-                        master_fd: imported.master_fd,
-                        state: imported.state.with_pane_id(*id),
-                    },
+        let spawn_runtime = || {
+            if let Some(argv) = managed_command {
+                TerminalRuntime::spawn_argv_command(
+                    *id,
+                    rows,
+                    cols,
+                    cwd.clone(),
+                    argv,
+                    &launch_env,
+                    crate::pane::AgentDetection::Enabled,
                     runtime_context.scrollback_limit_bytes,
                     crate::terminal_theme::TerminalTheme::default(),
                     None,
@@ -663,24 +679,29 @@ fn restore_tab(
                     runtime_context.render_dirty.clone(),
                 )
             }
-
-            #[cfg(not(unix))]
-            {
-                TerminalRuntime::spawn_with_initial_history(
-                    *id,
-                    rows,
-                    cols,
-                    cwd.clone(),
+        };
+        let runtime_result = {
+            #[cfg(unix)]
+            if let Some(imported) = imported_runtime {
+                TerminalRuntime::from_handoff_fd(
+                    crate::handoff_runtime::ImportedHandoffRuntime {
+                        master_fd: imported.master_fd,
+                        state: imported.state.with_pane_id(*id),
+                    },
                     runtime_context.scrollback_limit_bytes,
                     crate::terminal_theme::TerminalTheme::default(),
                     None,
-                    runtime_context.shell_config,
-                    &launch_env,
-                    startup.initial_history_ansi,
                     runtime_context.events.clone(),
                     runtime_context.render_notify.clone(),
                     runtime_context.render_dirty.clone(),
                 )
+            } else {
+                spawn_runtime()
+            }
+
+            #[cfg(not(unix))]
+            {
+                spawn_runtime()
             }
         };
 
@@ -688,7 +709,10 @@ fn restore_tab(
             Ok(runtime) => {
                 let terminal_id = TerminalId::alloc();
                 let mut terminal = TerminalState::new(terminal_id.clone(), cwd.clone());
-                if was_imported {
+                if saved_managed_key.is_some() {
+                    terminal.launch_argv = saved_launch_argv;
+                    terminal.managed_key = saved_managed_key;
+                } else if was_imported {
                     if let Some(argv) = saved_launch_argv {
                         terminal = terminal.with_launch_argv(argv).with_respawn_shell_on_exit();
                     }
@@ -1554,6 +1578,7 @@ mod tests {
                             }),
                             agent_resume: None,
                             launch_argv: None,
+                            managed_key: None,
                         },
                     )]),
                     zoomed: false,
@@ -1636,6 +1661,7 @@ mod tests {
                                 agent_session: None,
                                 agent_resume: None,
                                 launch_argv: None,
+                                managed_key: None,
                             },
                         ),
                         (
@@ -1648,6 +1674,7 @@ mod tests {
                                 agent_session: None,
                                 agent_resume: None,
                                 launch_argv: None,
+                                managed_key: None,
                             },
                         ),
                     ]),
@@ -1702,6 +1729,7 @@ mod tests {
                     agent_session: None,
                     agent_resume: None,
                     launch_argv: None,
+                    managed_key: None,
                 },
             )
         };
@@ -1718,6 +1746,7 @@ mod tests {
             }),
             agent_resume: None,
             launch_argv: None,
+            managed_key: None,
         };
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
@@ -1870,6 +1899,7 @@ mod tests {
                             }),
                             agent_resume: None,
                             launch_argv: None,
+                            managed_key: None,
                         },
                     )]),
                     zoomed: false,
@@ -2176,6 +2206,7 @@ mod tests {
                 agent_session: None,
                 agent_resume: None,
                 launch_argv: None,
+                managed_key: None,
             },
         );
         let mut history = SessionHistorySnapshot {

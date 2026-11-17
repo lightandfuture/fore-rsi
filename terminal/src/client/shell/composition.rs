@@ -78,8 +78,13 @@ impl ClientShellState {
             dragged_workspace_id: None,
             workspace_drop_indicator_row: None,
         };
-        if let Some(snapshot) = local_snapshot {
-            render::render_sidebar(
+        let sidebar_snapshot = local_snapshot.or_else(|| {
+            self.snapshot.as_deref().filter(|_| {
+                self.endpoints.len() > 1 && !self.sidebar_collapsed && layout.sidebar.width > 0
+            })
+        });
+        if let Some(snapshot) = sidebar_snapshot {
+            render::render_sidebar_panel(
                 &mut buffer,
                 sidebar,
                 snapshot,

@@ -10,6 +10,7 @@ from typing import ClassVar
 from fore_rsi.config import WorkflowConfig
 from fore_rsi.harnesses_backend.base import AgentSession
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
+from fore_rsi.rsi_workflows.runtimes.agent_scheduler import AgentScheduler
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 
 
@@ -22,10 +23,12 @@ class BaseWorkflow(ABC):
     entry_agent_class: ClassVar[type[BaseAgent]]
 
     def __init__(self, config: WorkflowConfig) -> None:
-        """Bind workflow settings and create its global workgroup without starting execution."""
+        """Initialize workflow settings, shared agent scheduling, and the global workgroup."""
         self._config = config
+        self.agent_scheduler = AgentScheduler(quotas=())
         self.workgroups: dict[str, Workgroup] = {}
         self.global_workgroup = self.create_workgroup("global")
+
 
     @abstractmethod
     async def run(self) -> None:

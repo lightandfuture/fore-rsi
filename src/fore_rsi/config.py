@@ -17,6 +17,8 @@ class WorkflowConfig:
 
     SESSIONS_DIR_NAME: ClassVar[str] = "workflows"
     SESSION_RECORD_NAME: ClassVar[str] = "workflow.json"
+    # Interval between host-exit checks while stopping a workflow.
+    STOP_POLL_INTERVAL_SECONDS: ClassVar[float] = 0.1
 
     # Select a built-in or project workflow by its declared name.
     workflow_name: Annotated[str, arg(name="workflow", prefix_name=False)] = "default"

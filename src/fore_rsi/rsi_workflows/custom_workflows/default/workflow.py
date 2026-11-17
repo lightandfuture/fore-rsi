@@ -42,4 +42,4 @@ class DefaultWorkflow(BaseWorkflow):
 
     async def run(self) -> None:
         """Run the default team's collaboration workflow."""
-        pass
+

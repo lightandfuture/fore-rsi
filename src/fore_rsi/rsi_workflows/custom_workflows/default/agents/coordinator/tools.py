@@ -1,32 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Coordinator tools for configuring the default workflow's team."""
+"""Task submission tools available to the default workflow's Coordinator."""
+
+from collections.abc import Awaitable, Callable
 
 from fore_rsi.rsi_workflows.agent_runtimes.base import AgentTool
-from fore_rsi.rsi_workflows.workflow_runtimes.agent_scheduler import AgentScheduler, QuotaLimit
+from fore_rsi.rsi_workflows.custom_workflows.default.task import TaskDefinition
 
 
-def create_tools(agent_scheduler: AgentScheduler) -> tuple[AgentTool, ...]:
-    """Bind Coordinator tools to the workflow's shared scheduler during agent construction."""
-
-    async def set_quota(role_name: str, model: str, limit: QuotaLimit) -> dict[str, object]:
-        """Apply one role/model limit and return its current configuration to the Coordinator."""
-        quota = agent_scheduler.set_quota(role_name, model, limit)
-        return {
-            "role_name": quota.agent_class.role_name,
-            "model": quota.model,
-            "limit": quota.limit,
-        }
-
+def create_coordinator_tools(
+    submit_task: Callable[[TaskDefinition], Awaitable[dict[str, object]]],
+) -> tuple[AgentTool, ...]:
+    """Bind the Coordinator's task-submission tool to its owning workflow."""
     return (
         AgentTool(
-            name="set_quota",
+            name="submit_task",
             description=(
-                "Set or update a role's concurrent execution limit for one model. "
-                "Use a positive integer, 0 to disable new dispatches, or 'unlimited' to remove the cap. "
-                f"Available roles: {', '.join(role.role_name for role in agent_scheduler.agent_roles)}."
+                "Submit the complete task agreed with the user. Include its goal, constraints, "
+                "authorized resources, inputs, deliverables, time budget, and requested team when known. "
+                "To revise a task, submit the full declaration including unchanged requirements."
             ),
-            handler=set_quota,
+            handler=submit_task,
         ),
     )

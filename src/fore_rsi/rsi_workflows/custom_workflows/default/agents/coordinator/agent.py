@@ -7,6 +7,9 @@ from pathlib import Path
 
 from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
+from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator.tools import (
+    create_coordinator_tools,
+)
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 from fore_rsi.utils.prompt_renderer import render_prompt
 
@@ -15,6 +18,7 @@ class CoordinatorAgent(BaseAgent):
     """Handle user requests and coordinate the default workflow's team."""
 
     role_name = "Coordinator"
+    create_tools = staticmethod(create_coordinator_tools)
     prompt_template_path = (
         Path(__file__).resolve().parents[2] / "prompts" / "coordinator" / "system.j2"
     )

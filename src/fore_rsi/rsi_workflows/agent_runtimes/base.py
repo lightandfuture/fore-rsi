@@ -4,7 +4,7 @@
 """Common lifecycle and input operations for one native agent conversation."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -145,6 +145,32 @@ class AgentRuntime(ABC):
     @abstractmethod
     async def wait_until_idle(self) -> None:
         """Wait for active execution and queued or automatic continuation to settle."""
+        ...
+
+    @abstractmethod
+    async def inspect(self) -> dict[str, object]:
+        """Return the native conversation reference, effective configuration, and execution state.
+
+        Inspecting the runtime does not start or interrupt execution.
+        """
+        ...
+
+    @abstractmethod
+    def events(self) -> AsyncIterator[dict[str, object]]:
+        """Observe native events, including output, tool activity, completion, and errors.
+
+        Consuming events does not start execution; stopping observation does not
+        interrupt the agent.
+        """
+        ...
+
+    @abstractmethod
+    async def fork(self) -> "AgentRuntime":
+        """Create an independent runtime inheriting this conversation's recorded history.
+
+        Leave the source runtime unchanged. The new runtime acquires execution
+        resources through its own start().
+        """
         ...
 
     @abstractmethod

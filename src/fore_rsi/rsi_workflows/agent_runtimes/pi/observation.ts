@@ -49,7 +49,7 @@ export default function observe(pi: ExtensionAPI): void {
   function snapshot(ctx: ExtensionContext) {
     const { model, sessionManager } = ctx;
     return {
-      session_file: sessionManager.getSessionFile(), session_id: sessionManager.getSessionId(),
+      record_file: sessionManager.getSessionFile(), session_id: sessionManager.getSessionId(),
       model: model ? `${model.provider}/${model.id}` : null, effort: pi.getThinkingLevel(),
     };
   }

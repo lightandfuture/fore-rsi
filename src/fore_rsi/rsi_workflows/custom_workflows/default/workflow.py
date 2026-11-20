@@ -17,12 +17,7 @@ from fore_rsi.rsi_workflows.custom_workflows.default.agents.checker import Check
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
-from fore_rsi.rsi_workflows.custom_workflows.default.agents.explorer import (
-    ExplorerAgent,
-)
-from fore_rsi.rsi_workflows.custom_workflows.default.agents.explorer.workflow import (
-    study_initial_context,
-)
+from fore_rsi.rsi_workflows.custom_workflows.default.agents.explorer import ExplorerAgent
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.verifier import (
     VerifierAgent,
 )
@@ -395,13 +390,3 @@ class DefaultWorkflow(BaseWorkflow):
     async def enqueue_task_submission(self, task_submission: TaskSubmission) -> None:
         """Queue a Coordinator task submission for the next workflow boundary."""
         await self.task_submission_queue.put(task_submission)
-
-    async def study_initial_context(
-        self, workflow_state: Mapping[str, object]
-    ) -> dict[str, object]:
-        """Run ExplorerAgent's initial context study stage for the graph node."""
-        explorer = self.workgroups[workflow_state["workgroup_name"]].agents[
-            workflow_state["agent_name"]
-        ]
-        await explorer.study_initial_context(workflow_state)
-        return {}

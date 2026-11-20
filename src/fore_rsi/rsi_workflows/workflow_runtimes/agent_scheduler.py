@@ -131,7 +131,7 @@ class AgentScheduler:
         workspace_id: str,
         is_entry_agent: bool,
         priority: SchedulingPriority,
-    ) -> dict[str, str]:
+    ) -> dict[str, object]:
         """Wait for quota, then create, register, and start one Agent."""
         quota_key = (
             agent_class,

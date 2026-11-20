@@ -241,6 +241,27 @@ mod tests {
     fn pane_projection_all_leaf_request_values() {
         use serde_json::json;
         let cases = [
+            (
+                "ensure",
+                vec![
+                    "--key",
+                    "key",
+                    "--cwd",
+                    "/tmp",
+                    "--env",
+                    "CODEX_HOME=/tmp/profile",
+                ],
+                "cli:pane:ensure",
+                "pane.ensure",
+                json!({"key": "key", "cwd": "/tmp", "env": {"CODEX_HOME": "/tmp/profile"}}),
+            ),
+            (
+                "remove",
+                vec!["--key", "key", "--terminal-id", "term"],
+                "cli:pane:remove",
+                "pane.remove",
+                json!({"key": "key", "terminal_id": "term"}),
+            ),
             ("list", vec![], "cli:pane:list", "pane.list", json!({})),
             (
                 "current",

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes import AgentTool, create_agent_runtime
+from fore_rsi.rsi_workflows.agent_runtimes.base import MessageDeliveryMode
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 
 if TYPE_CHECKING:
@@ -48,14 +49,18 @@ class BaseAgent:
         self.system_prompt: str | None = None
         self.state = AgentState.READY
         self.agent_runtime = create_agent_runtime(
-            agent_config, workflow.session_directory,
+            agent_config, workflow_directory=workflow.session_directory,
             workgroup_name=workgroup.workgroup_name, agent_name=agent_name,
             tool_mcp_host=workflow.tool_mcp_host, tools=tools,
         )
 
-    async def send_message(self, message: str) -> None:
-        """Send one workflow message through this Agent's native runtime."""
-        await self.agent_runtime.send_message(message)
+    async def send_message(
+        self,
+        message: str,
+        mode: MessageDeliveryMode = "queue",
+    ) -> None:
+        """Send one workflow message through the selected delivery mode."""
+        await self.agent_runtime.send_message(message, mode=mode)
 
     def get_full_name(self) -> str:
         """Return the agent's workgroup-qualified name within its workflow."""

@@ -1,25 +1,96 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Codex CLI preparation and runtime contract."""
+"""Prepare and run Codex sessions in the workflow-owned terminal lifecycle."""
 
 import asyncio
-from collections.abc import Sequence
-from contextlib import suppress
 import json
 import os
+from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
+from uuid import UUID
 
-from fore_rsi.config import AgentConfig, Config, ReasoningEffort
-from fore_rsi.rsi_workflows.agent_runtimes.base import MessageDeliveryMode
-from fore_rsi.rsi_workflows.agent_runtimes.installation import ensure_cli_installed
-from fore_rsi.rsi_workflows.agent_runtimes.named_conversation import NamedConversationRuntime
-from fore_rsi.rsi_workflows.agent_runtimes.native_launch import codex_profiles, codex_thread
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
+from fore_rsi.config import AgentConfig, ReasoningEffort
+from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
+from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
+from fore_rsi.utils.paths import write_private_text
 
 
-class CodexAgentRuntime(NamedConversationRuntime):
+def link_native_directory(link: Path, target: Path) -> None:
+    """Expose workflow-owned rollout files at the native location without replacing existing data."""
+    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+    link.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except FileExistsError:
+        if not link.is_symlink() or link.resolve() != target.resolve():
+            raise RuntimeError(f"Native Codex session directory is already in use: {link}") from None
+
+
+def prepare_codex_profile(profile: Path) -> None:
+    """Link Codex's user settings and credentials into the workflow-owned profile."""
+    origin = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser().resolve()
+    origin.mkdir(mode=0o700, parents=True, exist_ok=True)
+    profile.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if profile.resolve() == origin:
+        return
+
+    names = (
+        "config.toml",
+        "auth.json",
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "rules",
+        "skills",
+        "hooks.json",
+        "hooks",
+        "plugins",
+        "agents",
+        *(path.name for path in origin.glob("*.config.toml")),
+    )
+    for name in names:
+        source, link = origin / name, profile / name
+        if link.is_symlink():
+            if link.resolve() != source.resolve():
+                raise ValueError("This Codex conversation belongs to a different CODEX_HOME.")
+        elif not link.exists() and (source.exists() or name == "auth.json"):
+            # Codex can write a file-based login through this link without copying credentials.
+            link.symlink_to(source, target_is_directory=source.is_dir())
+
+
+def get_codex_thread(record: Path, sessions: Path) -> str | None:
+    """Pin the member's root Codex thread, discovering it only inside its rollout directory."""
+    if record.exists():
+        return str(UUID(record.read_text(encoding="utf-8").strip()))
+
+    roots: set[str] = set()
+    for path in sessions.glob("*/*/*/rollout-*.jsonl"):
+        with path.open(encoding="utf-8") as stream:
+            line = stream.readline()
+        if not line:
+            continue
+        first = json.loads(line)
+        metadata = first.get("payload", {})
+        if (
+            first.get("type") == "session_meta"
+            and metadata.get("source") == "cli"
+            and not metadata.get("forked_from_id")
+            and not metadata.get("parent_thread_id")
+        ):
+            roots.add(str(UUID(metadata["id"])))
+
+    if len(roots) > 1:
+        raise RuntimeError(f"Cannot identify one root Codex conversation in {sessions}.")
+    if not roots:
+        return None
+    thread = roots.pop()
+    write_private_text(record, thread + "\n")
+    return thread
+
+
+class CodexAgentRuntime(AgentRuntime):
     """Open Codex in a workflow pane and retain each member's native thread separately."""
 
     harness_name = "codex"
@@ -46,12 +117,55 @@ class CodexAgentRuntime(NamedConversationRuntime):
         self.native_message_tail: asyncio.Task[None] | None = None
         self.native_message_error: BaseException | None = None
 
+    def build_launch_command(
+        self,
+        executable: Path,
+        arguments: Sequence[str] = (),
+        *,
+        system_prompt: str | None = None,
+    ) -> list[str]:
+        """Prepare Codex's profile, prompt, tools, and pinned resume command for this member."""
+        self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        profile = self.native_home()
+        sessions = self.harness_directory / "sessions" / self.get_agent_file_path("").name
+        link_native_directory(profile / "sessions", sessions)
+        prepare_codex_profile(profile)
+        thread = get_codex_thread(self.get_agent_file_path(".id"), sessions)
+
+        options: list[str] = []
+        if self.agent_config.model is not None:
+            options.extend(["--model", self.agent_config.model])
+        if self.agent_config.effort is not None:
+            options.extend(self.effort_args(self.agent_config.effort))
+        if system_prompt is not None:
+            options.extend([
+                "-c",
+                f"developer_instructions={json.dumps(system_prompt, ensure_ascii=False)}",
+            ])
+        if self.tool_mcp is not None:
+            options.extend(self.tool_mcp_args())
+
+        command = [
+            str(executable),
+            "--no-daemon",
+            "-c",
+            f"sqlite_home={json.dumps(str(profile), ensure_ascii=False)}",
+            *options,
+        ]
+        if thread is not None:
+            command.extend(["resume", thread])
+        return [*command, *arguments]
+
+    def launch_environment(self) -> dict[str, str]:
+        """Keep Codex's profile selection with the pane so native restore uses the same state."""
+        return {"CODEX_HOME": str(self.native_home())}
+
     async def send_message(
         self,
         message: str,
         mode: MessageDeliveryMode = "queue",
     ) -> None:
-        """Queue a message with Codex's native queue command after its thread exists."""
+        """Queue a message through Codex's native queue command after its thread exists."""
         if mode == "steer":
             raise NotImplementedError(
                 "Codex does not expose a documented programmatic checkpoint-steer command."
@@ -83,13 +197,13 @@ class CodexAgentRuntime(NamedConversationRuntime):
             return
         try:
             message_task.result()
-        except BaseException as error:
+        except Exception as error:
             self.native_message_error = error
 
     def native_thread(self) -> str | None:
         """Return the member's pinned Codex thread, discovering it after its first native turn."""
         member = self.get_agent_file_path("")
-        return codex_thread(member.with_suffix(".id"), self.harness_directory / "sessions" / member.name)
+        return get_codex_thread(member.with_suffix(".id"), self.harness_directory / "sessions" / member.name)
 
     async def queue_native_message(self, message: str) -> None:
         """Queue one message through Codex's documented native session command."""
@@ -136,10 +250,10 @@ class CodexAgentRuntime(NamedConversationRuntime):
         if "CODEX_INSTALL_DIR" in os.environ:
             bin_directory = Path(os.environ["CODEX_INSTALL_DIR"])
         elif os.name == "nt":
-            bin_directory = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "OpenAI" / "Codex" / "bin"
+            bin_directory = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Programs" / "OpenAI" / "Codex" / "bin"
         else:
             bin_directory = Path.home() / ".local" / "bin"
-        return await ensure_cli_installed(
+        return await get_or_install_cli(
             cls.harness_name,
             bin_directory / ("codex.exe" if os.name == "nt" else "codex"),
             (
@@ -162,19 +276,19 @@ class CodexAgentRuntime(NamedConversationRuntime):
         await super().close()
         if was_bound:
             member = self.get_agent_file_path("")
-            codex_thread(member.with_suffix(".id"), self.harness_directory / "sessions" / member.name)
+            get_codex_thread(member.with_suffix(".id"), self.harness_directory / "sessions" / member.name)
 
     def effort_args(self, effort: ReasoningEffort) -> list[str]:
         """Override this invocation's reasoning effort without editing Codex's profile."""
         return ["-c", f"model_reasoning_effort={json.dumps(effort)}"]
 
     def native_home(self) -> Path:
-        """Keep Codex profile and sign-in state outside the project containing workflow transcripts."""
-        return codex_profiles(Config.SESSION_INDEX_PATH.parent, self.terminal_session_name) / self.get_agent_file_path("").name
+        """Keep the member's Codex profile beside its workflow record file."""
+        return self.harness_directory / "profile"
 
     def tool_mcp_args(self) -> list[str]:
         """Configure the member's stdio MCP client for this invocation without editing config.toml."""
-        options = []
-        for key, value in self.stdio_server().items():
+        options: list[str] = []
+        for key, value in self.tool_stdio_server().items():
             options.extend(["-c", f"mcp_servers.fore_rsi.{key}={json.dumps(value, ensure_ascii=False)}"])
         return options

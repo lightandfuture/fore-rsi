@@ -40,6 +40,10 @@ impl App {
                 "pane key and supplied executable must be nonempty",
             );
         }
+        let extra_env = match super::env::normalize_launch_env(params.env.clone()) {
+            Ok(env) => env,
+            Err((code, message)) => return encode_error(id, &code, message),
+        };
 
         // The key belongs to the terminal, so moving its pane does not change ownership.
         for (ws_idx, workspace) in self.state.workspaces.iter().enumerate() {
@@ -86,7 +90,7 @@ impl App {
         } else {
             Some(self.workspace_creation_source().unwrap_or(0))
         };
-        match self.open_managed_pane(workspace, params) {
+        match self.open_managed_pane(workspace, params, extra_env) {
             Ok(mut pane) => {
                 pane.created = true;
                 encode_success(id, ResponseResult::PaneInfo { pane })
@@ -100,6 +104,7 @@ impl App {
         &mut self,
         workspace: Option<usize>,
         params: PaneEnsureParams,
+        extra_env: Vec<(String, String)>,
     ) -> std::io::Result<PaneInfo> {
         let cwd = params.cwd.into();
         let command = crate::app::workflow_panes::launch_argv(Some(&params.key), &params.argv);
@@ -119,7 +124,7 @@ impl App {
                     appearance,
                     shell,
                     argv,
-                    Vec::new(),
+                    extra_env,
                 )?;
             self.terminal_runtimes.insert(terminal.id.clone(), runtime);
             self.state.terminals.insert(terminal.id.clone(), terminal);
@@ -128,7 +133,7 @@ impl App {
             self.schedule_session_save();
             (ws_idx, tab_idx)
         } else {
-            (self.create_workspace(cwd, true, argv, Vec::new())?, 0)
+            (self.create_workspace(cwd, true, argv, extra_env)?, 0)
         };
 
         let tab = &mut self.state.workspaces[ws_idx].tabs[tab_idx];

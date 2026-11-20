@@ -32,6 +32,8 @@ crate::cli::projection::cli_params! {
         /// Omit the command to create a regular shell pane with native agent restore.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub argv: Vec<String> => Field::new(Vec::new()).input(binding::managed_command()),
+        #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+        pub env: HashMap<String, String> => Field::new(HashMap::new()).input(binding::environment()),
     }
 }
 

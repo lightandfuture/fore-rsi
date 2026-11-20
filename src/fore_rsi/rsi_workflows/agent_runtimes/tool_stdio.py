@@ -3,15 +3,15 @@
 
 """Connect a native MCP stdio client to its member's current stateless, JSON-response HTTP endpoint."""
 
-from http.client import HTTPConnection, HTTPException
 import json
-from pathlib import Path
 import sys
+from http.client import HTTPConnection, HTTPException
+from pathlib import Path
 from time import monotonic, sleep
 from urllib.parse import urlsplit
 
 
-def forward(address_file: Path, message: bytes, version: str | None) -> bytes:
+def forward_mcp_message(address_file: Path, message: bytes, version: str | None) -> bytes:
     """Forward one JSON-RPC message to the local workflow host without retaining its capability."""
     address = urlsplit(address_file.read_text(encoding="utf-8").strip())
     if address.scheme != "http" or address.hostname != "127.0.0.1" or address.port is None:
@@ -30,31 +30,41 @@ def forward(address_file: Path, message: bytes, version: str | None) -> bytes:
         connection.close()
 
 
-def serve(address_file: Path) -> None:
-    """Relay until the native client closes stdin. Only the initial handshake may be retried."""
-    version = None
+def relay_mcp_messages(address_file: Path) -> None:
+    """Relay JSON-RPC messages until the native client closes stdin."""
+    protocol_version = None
     for line in sys.stdin.buffer:
         message = json.loads(line)
-        initialize = message.get("method") == "initialize"
-        deadline = monotonic() + 8 if initialize else 0
-        while True:
+        is_initialize = message.get("method") == "initialize"
+        retry_deadline = monotonic() + 8 if is_initialize else None
+        reply: dict[str, object] | None = None
+        while retry_deadline is None or monotonic() < retry_deadline:
             try:
-                raw = forward(address_file, line, version)
+                raw = forward_mcp_message(address_file, line, protocol_version)
                 reply = json.loads(raw) if raw else None
-                if initialize and reply and "result" in reply:
-                    version = reply["result"]["protocolVersion"]
+                if is_initialize and reply and "result" in reply:
+                    protocol_version = reply["result"]["protocolVersion"]
                 break
             except (OSError, HTTPException, ValueError) as error:
-                # A restored PTY can start before its workflow republishes the address.
-                if isinstance(error, (FileNotFoundError, ConnectionError, HTTPException)) and monotonic() < deadline:
+                retryable = isinstance(error, (FileNotFoundError, ConnectionError, HTTPException))
+                if is_initialize and retryable:
                     sleep(0.1)
                     continue
-                reply = {"jsonrpc": "2.0", "id": message.get("id"),
-                         "error": {"code": -32603, "message": "The ForeRSI workflow tool service is unavailable."}}
+                reply = {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32603, "message": "The ForeRSI workflow tool service is unavailable."},
+                }
                 break
-        if "id" in message and reply is not None:
+        if reply is None:
+            reply = {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {"code": -32603, "message": "The ForeRSI workflow tool service is unavailable."},
+            }
+        if "id" in message:
             print(json.dumps(reply), flush=True)
 
 
 if __name__ == "__main__":
-    serve(Path(sys.argv[1]))
+    relay_mcp_messages(Path(sys.argv[1]))

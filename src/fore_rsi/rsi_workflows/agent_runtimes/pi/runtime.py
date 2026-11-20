@@ -1,29 +1,37 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Run one workflow member in the native Pi terminal with its own conversation and tools."""
+"""Run one workflow member in the native Pi terminal with its own record file and tools."""
 
 import asyncio
-from collections.abc import Sequence
-import json
 import os
-from pathlib import Path
 import secrets
 import socket
+from collections.abc import Sequence
+from pathlib import Path
+from typing import NotRequired, TypedDict
 from uuid import uuid4
 
 import httpx2
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
-from fore_rsi.rsi_workflows.agent_runtimes.installation import ensure_cli_installed
-from fore_rsi.rsi_workflows.agent_runtimes.pi.conversation import (
-    IpcEndpoint, PiObservation, recorded_observation,
+from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
+from fore_rsi.rsi_workflows.agent_runtimes.pi.record_file import (
+    PiSessionState,
+    recorded_observation,
 )
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
 from fore_rsi.utils.paths import write_private_text
-from fore_rsi.utils.terminal import PaneLocation, run_terminal, terminal_executable
+from fore_rsi.utils.terminal import PaneLocation, terminal_executable
+
+
+class IpcEndpoint(TypedDict):
+    """Address and private capability for a running member's local IPC listener."""
+
+    token: str
+    socket_path: NotRequired[str]
+    port: NotRequired[int]
 
 
 class PiAgentRuntime(AgentRuntime):
@@ -67,7 +75,7 @@ class PiAgentRuntime(AgentRuntime):
     async def ensure_installed(cls) -> Path:
         """Return Pi's launcher for startup callers, using the official installer when missing."""
         agent_directory = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent"))
-        return await ensure_cli_installed(
+        return await get_or_install_cli(
             cls.harness_name,
             agent_directory / "bin" / ("pi.cmd" if os.name == "nt" else "pi"),
             "https://pi.dev/install.ps1" if os.name == "nt" else "https://pi.dev/install.sh",
@@ -80,7 +88,7 @@ class PiAgentRuntime(AgentRuntime):
         *,
         system_prompt: str | None = None,
     ) -> list[str]:
-        """Open this member's transcript with Pi's native lifecycle hook, role instructions and tools."""
+        """Open this member's record file with Pi's native lifecycle hook, role instructions and tools."""
         self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         # Pi deduplicates extensions by path. Reuse the terminal hook if the user already installed it.
         profile = Path(os.environ.get("PI_CODING_AGENT_DIR") or Path.home() / ".pi" / "agent").expanduser()
@@ -124,8 +132,10 @@ class PiAgentRuntime(AgentRuntime):
         mode: MessageDeliveryMode = "queue",
     ) -> None:
         """Deliver a user message through Pi's native steer or follow-up queue."""
+        if mode not in {"queue", "steer"}:
+            raise ValueError(f"Unsupported Pi message delivery mode: {mode!r}")
         async with self.message_lock:
-            _, state = await self.observation()
+            _, state = await self.session_state()
             if state == "stopped":
                 raise RuntimeError("Start the Pi member before sending a native message.")
             async with self.observer_client() as client:
@@ -151,25 +161,25 @@ class PiAgentRuntime(AgentRuntime):
             headers={"Authorization": f"Bearer {self.ipc_endpoint['token']}"},
         )
 
-    async def live_observation(self) -> PiObservation:
+    async def live_session_state(self) -> PiSessionState:
         """Read live session settings directly from the Pi extension over local IPC."""
         async with self.observer_client() as client:
             response = await client.get("/state")
             response.raise_for_status()
             return response.json()
 
-    async def observation(self) -> tuple[PiObservation, str]:
+    async def session_state(self) -> tuple[PiSessionState, str]:
         """Pair Pi's live session settings with its bound terminal owner."""
         agent = await self.get_agent()
         if agent is None:
-            info = await asyncio.to_thread(recorded_observation, self.get_agent_file_path(".jsonl"))
-            return info, "stopped"
-        info = await self.live_observation()
+            state = await asyncio.to_thread(recorded_observation, self.get_agent_file_path(".jsonl"))
+            return state, "stopped"
+        state = await self.live_session_state()
         session = agent.get("agent_session")
         if session and (session["kind"] != "path"
-                        or Path(session["value"]).resolve() != Path(info["session_file"]).resolve()):
-            raise RuntimeError("Pi is no longer observing the conversation reported by its terminal.")
-        return info, agent["agent_status"]
+                        or Path(session["value"]).resolve() != Path(state["record_file"]).resolve()):
+            raise RuntimeError("Pi is no longer observing the record file reported by its terminal.")
+        return state, agent["agent_status"]
 
     async def wait_for_agent_ready(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
         """Confirm Pi's record file and IPC endpoint after the terminal reports readiness."""
@@ -180,8 +190,8 @@ class PiAgentRuntime(AgentRuntime):
             raise RuntimeError(f"Pi in pane {pane['pane_id']} did not report its record file.")
         if Path(agent_session["value"]).resolve() != expected_file:
             raise RuntimeError(f"Pi in pane {pane['pane_id']} is using another record file.")
-        info = await self.live_observation()
-        if Path(info["session_file"]).resolve() != expected_file:
+        state = await self.live_session_state()
+        if Path(state["record_file"]).resolve() != expected_file:
             raise RuntimeError(f"Pi in pane {pane['pane_id']} reported another record file.")
         return agent
 

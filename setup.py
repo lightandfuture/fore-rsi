@@ -3,10 +3,10 @@
 
 """Build ForeRSI's private terminal as part of its Python distribution."""
 
-from collections.abc import Sequence
 import os
-from pathlib import Path
 import tomllib
+from collections.abc import Sequence
+from pathlib import Path
 
 from setuptools import Distribution, setup
 from setuptools.command.bdist_wheel import bdist_wheel
@@ -60,7 +60,6 @@ setup(
         "terminal/src/integration/assets/pi/herdr-agent-state.ts",
         "src/fore_rsi/rsi_workflows/agent_runtimes/pi/tool_mcp.ts",
         "src/fore_rsi/rsi_workflows/agent_runtimes/pi/observation.ts",
-        "src/fore_rsi/rsi_workflows/agent_runtimes/native_launch.py",
         "src/fore_rsi/rsi_workflows/agent_runtimes/tool_stdio.py",
     ])],
     rust_extensions=[

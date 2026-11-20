@@ -3,19 +3,28 @@
 
 """Common lifecycle and input operations for one native agent conversation."""
 
-from abc import ABC, abstractmethod
 import asyncio
-from collections.abc import Sequence
 import json
+import sys
+from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import ClassVar, Literal
 from urllib.parse import quote
 
 from fore_rsi.config import AgentConfig, WorkflowConfig
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, create_tool_mcp
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
-from fore_rsi.utils.terminal import PaneLocation, ensure_terminal_pane, report_terminal_metadata, run_terminal
-
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import (
+    AgentTool,
+    ToolMcpHost,
+    create_tool_mcp,
+)
+from fore_rsi.utils.terminal import (
+    PaneLocation,
+    ensure_terminal_pane,
+    report_terminal_metadata,
+    run_terminal,
+    terminal_executable,
+)
 
 type MessageDeliveryMode = Literal["queue", "steer"]
 
@@ -122,14 +131,29 @@ class AgentRuntime(ABC):
 
     async def close(self) -> None:
         """Stop this agent and remove its tool endpoint, preserving the native conversation."""
-        async with self.lifecycle:
-            async with self.message_lock:
-                try:
-                    await self.remove_failed_pane()
-                    await self.stop_agent_runtime()
-                    self.pane_id = self.terminal_id = None
-                finally:
-                    await self.tool_mcp_host.unpublish(self.tool_mcp)
+        async with self.lifecycle, self.message_lock:
+            try:
+                await self.remove_failed_pane()
+                await self.stop_agent_runtime()
+                self.pane_id = self.terminal_id = None
+            finally:
+                await self.tool_mcp_host.unpublish(self.tool_mcp)
+
+    @classmethod
+    def remove_workflow_storage(cls, workflow_directory: Path) -> None:
+        """Remove native links that still refer to a deleted workflow directory."""
+
+    def launch_environment(self) -> Mapping[str, str]:
+        """Return environment variables that the terminal must preserve for this native process."""
+        return {}
+
+    def tool_stdio_server(self) -> dict[str, object]:
+        """Describe the isolated stdio bridge that forwards this member's MCP requests."""
+        bridge = terminal_executable().with_name("tool_stdio.py")
+        return {
+            "command": sys.executable,
+            "args": ["-I", "-S", str(bridge), str(self.get_agent_file_path(".mcp-url"))],
+        }
 
     @classmethod
     @abstractmethod
@@ -183,6 +207,7 @@ class AgentRuntime(ABC):
             command=command,
             label=f"{self.workgroup_name}/{self.agent_name}",
             tokens=pane_metadata,
+            environment=self.launch_environment(),
         )
         if pane.get("created"):
             self.failed_pane_id = pane["terminal_id"]

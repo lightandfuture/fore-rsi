@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from fore_rsi.config import AgentConfig, WorkflowConfig
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import ToolMcpHost
 from fore_rsi.rsi_workflows.base_agent import AgentState, BaseAgent
 from fore_rsi.rsi_workflows.workflow_runtimes.agent_scheduler import (
     AgentScheduler,

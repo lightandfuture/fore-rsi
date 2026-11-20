@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import psutil
 
-from fore_rsi.config import Config, AgentConfig, WorkflowConfig
+from fore_rsi.config import AgentConfig, Config, WorkflowConfig
 from fore_rsi.rsi_workflows.workflow_runtimes.run_state import WorkflowState
 
 if TYPE_CHECKING:
@@ -171,9 +171,13 @@ class WorkflowRunner:
         record_path = WorkflowRunner._session_record_path(
             cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, session_name
         )
-        from fore_rsi.rsi_workflows.agent_runtimes.native_launch import remove_native_storage
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        harness = record.get("harness", AgentConfig.harness)
+        if not isinstance(harness, str):
+            raise TypeError(f"Workflow session {session_name!r} has an invalid harness.")
+        from fore_rsi.rsi_workflows.agent_runtimes import get_agent_runtime_class
 
-        remove_native_storage(record_path.parent, Config.SESSION_INDEX_PATH.parent)
+        get_agent_runtime_class(harness).remove_workflow_storage(record_path.parent)
         try:
             shutil.rmtree(record_path.parent)
         except FileNotFoundError:
@@ -231,14 +235,13 @@ class WorkflowRunner:
         }
         # Publish only after the temporary file is closed, so readers see a
         # complete snapshot and Windows can replace the destination.
-        temporary = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", dir=session_dir, delete=False
-        )
-        temporary_path = Path(temporary.name)
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(record, temporary, indent=2)
+            temporary.write("\n")
         try:
-            with temporary:
-                json.dump(record, temporary, indent=2)
-                temporary.write("\n")
             temporary_path.replace(record_path)
         finally:
             temporary_path.unlink(missing_ok=True)

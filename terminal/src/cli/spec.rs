@@ -712,7 +712,7 @@ mod tests {
     fn next_step_hints_render_without_replacing_existing_after_help() {
         let agent_start = long_help(&["agent", "start"]);
         assert!(
-            agent_start.contains("The pane must be at its interactive shell prompt."),
+            agent_start.contains("A new launch requires an idle shell."),
             "agent start dropped its existing after_help: {agent_start}"
         );
         assert!(

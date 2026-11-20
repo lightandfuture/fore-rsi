@@ -182,6 +182,7 @@ mod tests {
             "agent.send_keys",
             "pane.split",
             "pane.ensure",
+            "pane.remove",
             "pane.swap",
             "pane.move",
             "pane.zoom",

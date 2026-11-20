@@ -540,7 +540,8 @@ fn wait_for_resolved_agent(
                     .map(Some);
             }
             if (wait.until_ready && current.interactive_ready)
-                || (!wait.until_ready && agent_wait_matches(&current, &wait.until, wait.after_state_change_seq))
+                || (!wait.until_ready
+                    && agent_wait_matches(&current, &wait.until, wait.after_state_change_seq))
             {
                 return Ok(Some(AgentWaitOutcome::Matched(Box::new(current))));
             }

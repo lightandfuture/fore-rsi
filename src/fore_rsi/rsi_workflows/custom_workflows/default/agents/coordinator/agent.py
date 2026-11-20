@@ -5,7 +5,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
@@ -61,7 +61,7 @@ class CoordinatorAgent(BaseAgent):
     @staticmethod
     async def parse_task(workflow_state: Mapping[str, object]) -> dict[str, object]:
         """Ask the Coordinator to parse the startup task declaration."""
-        coordinator = workflow_state["agent"]
+        coordinator = cast(CoordinatorAgent, workflow_state["agent"])
         prompt_context = {"startup_task_file": workflow_state["startup_task_file"]}
         user_prompt = render_prompt_bundle(
             [
@@ -71,6 +71,5 @@ class CoordinatorAgent(BaseAgent):
             prompt_context,
             section_transition="Here are the Coordinator's instructions for this workflow stage.",
         )
-        await coordinator.send_message(user_prompt)
-        await coordinator.agent_runtime.wait_until_idle()
+        await coordinator.send_message(user_prompt, mode="queue")
         return {}

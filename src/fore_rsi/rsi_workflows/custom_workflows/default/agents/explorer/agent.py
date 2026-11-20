@@ -5,7 +5,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
@@ -60,7 +60,7 @@ class ExplorerAgent(BaseAgent):
     @staticmethod
     async def study_initial_context(workflow_state: Mapping[str, object]) -> dict[str, object]:
         """Study the task context before defining the initial baseline."""
-        explorer = workflow_state["agent"]
+        explorer = cast(ExplorerAgent, workflow_state["agent"])
         user_prompt = render_prompt_bundle(
             [
                 ExplorerAgent.common_user_prompt_path,
@@ -69,6 +69,5 @@ class ExplorerAgent(BaseAgent):
             {"task_revision_file": workflow_state["task_revision_file"]},
             section_transition="Here are the Explorer's instructions for this workflow stage.",
         )
-        await explorer.send_message(user_prompt)
-        await explorer.agent_runtime.wait_until_idle()
+        await explorer.send_message(user_prompt, mode="queue")
         return {}

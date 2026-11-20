@@ -4,20 +4,20 @@
 """Reuse native CLIs or prepare them with their official user-level installers."""
 
 import asyncio
-from collections.abc import Mapping, Sequence
-from contextlib import suppress
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from loguru import logger
 import psutil
+from loguru import logger
 
 
-async def ensure_cli_installed(
+async def get_or_install_cli(
     command_name: str,
     installed_path: Path,
     installer_url: str,
@@ -37,7 +37,7 @@ async def ensure_cli_installed(
 
     with TemporaryDirectory(prefix=f"fore-rsi-{command_name}-install-") as directory:
         installer = Path(directory) / ("install.ps1" if os.name == "nt" else "install.sh")
-        await _run_installation_command(
+        await run_installation_command(
             [
                 "curl.exe" if os.name == "nt" else "curl",
                 "--fail", "--silent", "--show-error", "--location",
@@ -50,7 +50,7 @@ async def ensure_cli_installed(
             if os.name == "nt"
             else [shell]
         )
-        await _run_installation_command([*command, str(installer)], installer_environment)
+        await run_installation_command([*command, str(installer)], installer_environment)
 
     executable = shutil.which(command_name) or shutil.which(str(installed_path))
     if executable is None:
@@ -60,7 +60,7 @@ async def ensure_cli_installed(
     return Path(executable).absolute()
 
 
-async def _run_installation_command(command: Sequence[str], environment: Mapping[str, str]) -> None:
+async def run_installation_command(command: Sequence[str], environment: Mapping[str, str]) -> None:
     """Stream installer output to stderr and wait for its process tree to stop on cancellation."""
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -69,7 +69,8 @@ async def _run_installation_command(command: Sequence[str], environment: Mapping
     )
     try:
         # A pipe keeps native installers from launching their interactive CLI after installation.
-        assert process.stdout is not None
+        if process.stdout is None:
+            raise RuntimeError("The installer process did not expose stdout.")
         while output := await process.stdout.read(65536):
             sys.stderr.buffer.write(output)
             sys.stderr.buffer.flush()

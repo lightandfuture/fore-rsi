@@ -4,11 +4,11 @@
 """Locate the bundled terminal and execute its asynchronous control commands."""
 
 import asyncio
+import json
+import subprocess
 from collections.abc import Mapping, Sequence
 from importlib.metadata import distribution
-import json
 from pathlib import Path
-import subprocess
 from typing import Literal, NotRequired, TypedDict
 
 from fore_rsi.config import Config
@@ -63,11 +63,15 @@ async def ensure_terminal_pane(
     workspace_id: str | None = None,
     command: Sequence[str] = (),
     tokens: Mapping[str, str] | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> PaneLocation:
-    """Create or reuse the keyed pane, publish its display tokens, and return its location."""
+    """Create or reuse the keyed pane, preserving the native launch environment for new panes."""
     arguments = ["pane", "ensure", "--key", key, "--cwd", str(working_directory), "--label", label]
     if workspace_id is not None:
         arguments.extend(["--workspace", workspace_id])
+    if environment:
+        for name, value in sorted(environment.items()):
+            arguments.extend(["--env", f"{name}={value}"])
     if command:
         arguments.extend(["--", *command])
     result = await run_terminal(arguments, terminal_session_name, capture_output=True)

@@ -12,8 +12,7 @@ from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.claude_code import ClaudeCodeAgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.codex import CodexAgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.pi import PiAgentRuntime
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
 
 
 def create_agent_runtime(

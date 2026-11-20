@@ -17,6 +17,7 @@ from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
 from fore_rsi.rsi_workflows.agent_runtimes.pi.record_file import (
+    PiLiveSessionState,
     PiSessionState,
     read_record_file_state,
 )
@@ -58,6 +59,7 @@ class PiAgentRuntime(AgentRuntime):
             tools=tools,
         )
         self.ipc_endpoint = self.create_ipc_endpoint()
+        self.pending_settled_seq: int | None = None
 
     def create_ipc_endpoint(self) -> IpcEndpoint:
         """Choose a private local socket, using a reserved TCP port on Windows."""
@@ -134,15 +136,34 @@ class PiAgentRuntime(AgentRuntime):
         if mode not in {"queue", "steer"}:
             raise ValueError(f"Unsupported Pi message delivery mode: {mode!r}")
         async with self.message_lock:
-            _, state = await self.session_state()
+            session_state, state = await self.session_state()
             if state == "stopped":
                 raise RuntimeError("Start the Pi member before sending a native message.")
+            if not isinstance(session_state, dict) or "settled_seq" not in session_state:
+                raise RuntimeError("Pi did not report a live settle sequence.")
+            self.pending_settled_seq = session_state["settled_seq"]
+            try:
+                async with self.ipc_client() as client:
+                    response = await client.post(
+                        "/message",
+                        json={"message": message, "mode": mode},
+                    )
+                    response.raise_for_status()
+            except BaseException:
+                self.pending_settled_seq = None
+                raise
+
+    async def wait_for_settle(self) -> None:
+        """Wait for Pi's native agent_settled event after the last submitted message."""
+        after = self.pending_settled_seq
+        if after is None:
+            raise RuntimeError("Submit a Pi message before waiting for settle.")
+        try:
             async with self.ipc_client() as client:
-                response = await client.post(
-                    "/message",
-                    json={"message": message, "mode": mode},
-                )
+                response = await client.get("/settled", params={"after": str(after)})
                 response.raise_for_status()
+        finally:
+            self.pending_settled_seq = None
 
     def ipc_client(self) -> httpx2.AsyncClient:
         """Connect to the member's private local IPC endpoint without using workstation proxies."""
@@ -160,14 +181,14 @@ class PiAgentRuntime(AgentRuntime):
             headers={"Authorization": f"Bearer {self.ipc_endpoint['token']}"},
         )
 
-    async def live_session_state(self) -> PiSessionState:
+    async def live_session_state(self) -> PiLiveSessionState:
         """Read live session settings directly from the Pi extension over local IPC."""
         async with self.ipc_client() as client:
             response = await client.get("/state")
             response.raise_for_status()
             return response.json()
 
-    async def session_state(self) -> tuple[PiSessionState, str]:
+    async def session_state(self) -> tuple[PiSessionState | PiLiveSessionState, str]:
         """Pair Pi's live session settings with its bound terminal owner."""
         agent = await self.get_agent()
         if agent is None:

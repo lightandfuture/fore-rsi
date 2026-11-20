@@ -19,6 +19,12 @@ class PiSessionState(TypedDict):
     effort: ReasoningEffort | None
 
 
+class PiLiveSessionState(PiSessionState):
+    """Live Pi session settings, including the native settle sequence."""
+
+    settled_seq: int
+
+
 def read_record_file_state(path: Path) -> PiSessionState:
     """Read the selected model and effort from a saved Pi record file."""
     state: PiSessionState = {

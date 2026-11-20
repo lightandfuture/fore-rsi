@@ -13,6 +13,11 @@ type MessageRequest = {
   mode: MessageDeliveryMode;
 };
 
+type SettledWaiter = {
+  after: number;
+  resolve: (sequence: number) => void;
+};
+
 async function readMessageRequest(request: IncomingMessage): Promise<MessageRequest> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -45,14 +50,33 @@ export default function serveIpc(pi: ExtensionAPI): void {
 
   let server: Server | undefined;
   let socketPath: string | undefined;
+  let settledSequence = 0;
+  let settledWaiters: SettledWaiter[] = [];
+
+  function waitForSettled(after: number): Promise<number> {
+    if (settledSequence > after) return Promise.resolve(settledSequence);
+    return new Promise(resolve => settledWaiters.push({ after, resolve }));
+  }
+
+  function markSettled(): void {
+    settledSequence += 1;
+    const ready = settledWaiters.filter(waiter => settledSequence > waiter.after);
+    settledWaiters = settledWaiters.filter(waiter => settledSequence <= waiter.after);
+    for (const waiter of ready) waiter.resolve(settledSequence);
+  }
 
   function snapshot(ctx: ExtensionContext) {
     const { model, sessionManager } = ctx;
     return {
       record_file: sessionManager.getSessionFile(), session_id: sessionManager.getSessionId(),
       model: model ? `${model.provider}/${model.id}` : null, effort: pi.getThinkingLevel(),
+      settled_seq: settledSequence,
     };
   }
+
+  pi.on("agent_settled", () => {
+    markSettled();
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     if (ctx.mode !== "tui") return;
@@ -76,6 +100,21 @@ export default function serveIpc(pi: ExtensionAPI): void {
       }
       if (request.method === "GET" && request.url === "/state") {
         sendJson(response, 200, snapshot(ctx));
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        (request.url === "/settled" || request.url?.startsWith("/settled?"))
+      ) {
+        try {
+          const after = Number(new URL(request.url, "http://pi").searchParams.get("after"));
+          if (!Number.isSafeInteger(after) || after < 0) {
+            throw new Error("settled wait requires a non-negative sequence");
+          }
+          sendJson(response, 200, { settled_seq: await waitForSettled(after) });
+        } catch (error) {
+          sendJson(response, 400, { error: String(error) });
+        }
         return;
       }
       if (request.method === "POST" && request.url === "/message") {
@@ -109,6 +148,7 @@ export default function serveIpc(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
+    settledWaiters = [];
     if (!server) return;
     server.close();
     server = undefined;

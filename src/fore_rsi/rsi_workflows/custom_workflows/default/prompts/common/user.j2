@@ -3,6 +3,25 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 #}
 
-Here are the common instructions for this workflow stage.
+{% if task is defined %}
+## Task objective
+{{ task.description }}
 
-Complete the assigned workflow stage using the task declaration and available context. Preserve the existing task constraints, record the result needed by the next stage, and return concrete blockers instead of silently changing scope.
+{% if task.deliverables %}
+## Deliverables and acceptance criteria
+- {{ task.deliverables | join('\n- ') }}
+{% endif %}
+{% if task.constraints %}
+## Constraints
+- {{ task.constraints | join('\n- ') }}
+{% endif %}
+{% if task.resources %}
+## Authorized resources and limits
+- {{ task.resources | join('\n- ') }}
+{% endif %}
+{% if task.time_budget_seconds is not none %}
+Total task time budget: {{ task.time_budget_seconds }} seconds.
+{% endif %}
+{% else %}
+Read the task declaration for the objective, deliverables and acceptance criteria, constraints, authorized resources and limits, and total task time budget.
+{% endif %}

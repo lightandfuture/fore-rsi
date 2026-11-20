@@ -3,6 +3,17 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 #}
 
-Read the task declaration at {{ startup_task_file }}.
+## User request
+{% if startup_task_file is defined %}
+Read the full declaration at `{{ startup_task_file }}`.
+{% else %}
+{{ user_request }}
+{% endif %}
 
-Parse the complete task requirements, including the goal, constraints, resources, AgentTeam allocations, environment variables, and task comments. Use the `submit_task` tool to submit the structured TaskSubmission after the task is understood.
+{% if task_file is defined and task_file %}
+Current task: `{{ task_file }}`. Read the full declaration before preparing a revision.
+{% elif task_file is defined %}
+There is no saved task in this session.
+{% endif %}
+
+Determine whether the user wants to start a task, revise the current task, or get an answer.

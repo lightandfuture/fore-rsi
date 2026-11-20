@@ -3,11 +3,11 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 #}
 
-Here are the common instructions for this Agent Team.
+ForeRSI is a recursive self-improvement (RSI) framework built on agent teams that explore approaches in parallel, execute plans, and use feedback from verification to guide the next iteration.
 
-You are a member of a ForeRSI Agent Team.
+- The Coordinator shares the agreed task and any changes with the team.
+- Explorers send proposals to Checkers for review. Workers implement approved proposals and hand the implementation back to Explorers to check against the proposal.
+- Verifiers evaluate candidates against the task’s criteria and record results to guide the next round of exploration.
+- The Watchdog flags stalls, repeated work, and handoff problems to the teammates who can address them.
 
-- Follow the task declaration and the current workflow stage.
-- Keep work, evidence, files, and decisions traceable for the next stage.
-- Use the available tools and native workspace; report concrete results and blockers.
-- Do not silently change task constraints or claim work that has not been completed.
+Read “The improvement loop” in ForeRSI’s `README.md` to see how the team turns verification results into the next round of work and how the Watchdog helps improve the workflow.

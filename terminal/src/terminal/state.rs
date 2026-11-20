@@ -2500,9 +2500,6 @@ mod tests {
         assert!(terminal.reconcile_managed_agent_at(now + Duration::from_millis(100), false));
         assert!(terminal.managed_agent_launch_pending());
 
-        terminal.set_detected_state(Some(Agent::Pi), AgentState::Working);
-        assert!(!terminal.reconcile_managed_agent_at(now + Duration::from_millis(101), false));
-
         terminal.set_detected_state(Some(Agent::Pi), AgentState::Blocked);
         assert!(terminal.reconcile_managed_agent_at(now + Duration::from_millis(102), false));
         assert!(terminal.managed_agent_launch_pending());
@@ -2523,6 +2520,24 @@ mod tests {
         assert_eq!(terminal.agent_name.as_deref(), Some("reviewer"));
         assert!(terminal.reconcile_managed_agent_at(now + Duration::from_secs(2), true));
         assert_eq!(terminal.agent_name, None);
+    }
+
+    #[test]
+    fn managed_agent_working_state_confirms_startup() {
+        let mut terminal = test_terminal();
+        let now = Instant::now();
+        terminal.begin_managed_agent(
+            "reviewer".into(),
+            Agent::Pi,
+            now,
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+        );
+        terminal.set_detected_state(Some(Agent::Pi), AgentState::Working);
+
+        assert!(terminal.reconcile_managed_agent_at(now + Duration::from_millis(100), false));
+        assert!(!terminal.managed_agent_launch_pending());
+        assert!(terminal.managed_agent_interactive_ready());
     }
 
     #[test]

@@ -218,6 +218,7 @@ fn reply_to_probe(request: ApiRequestMessage) {
         Method::PaneGet(_) => ResponseResult::PaneInfo {
             pane: PaneInfo {
                 managed_key: None,
+                created: false,
                 pane_id: "pane_1".into(),
                 terminal_id: "term_1".into(),
                 workspace_id: "workspace_1".into(),

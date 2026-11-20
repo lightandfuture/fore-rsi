@@ -1021,6 +1021,7 @@ fn caller_timeout_dispatch_uses_timeout_error() {
             method: Method::AgentPrompt(crate::api::schema::AgentPromptParams {
                 target: "reviewer".into(),
                 text: "review this".into(),
+                require_idle: false,
                 wait: None,
             }),
         },
@@ -1137,6 +1138,7 @@ mod tests {
     ) -> crate::api::schema::PaneInfo {
         crate::api::schema::PaneInfo {
             managed_key: None,
+            created: false,
             pane_id: pane_id.into(),
             terminal_id: "term_1".into(),
             workspace_id: "ws_1".into(),

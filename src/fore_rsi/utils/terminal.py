@@ -9,7 +9,7 @@ from importlib.metadata import distribution
 import json
 from pathlib import Path
 import subprocess
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from fore_rsi.config import Config
 
@@ -20,6 +20,7 @@ class PaneLocation(TypedDict):
     pane_id: str
     workspace_id: str
     terminal_id: str
+    created: NotRequired[bool]
 
 
 async def run_terminal(

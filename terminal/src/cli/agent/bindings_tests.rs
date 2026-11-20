@@ -68,6 +68,10 @@ fn agent_projection_defaults_and_ordered_read_policy() {
 
 #[test]
 fn agent_projection_nested_wait_omission_and_repeated_statuses() {
+    assert_eq!(
+        params(&["prompt", "--require-idle", "--", "opaque", "--literal"]),
+        serde_json::json!({"target":"opaque", "text":"--literal", "require_idle":true})
+    );
     for text in ["--wait", "--until", "--timeout", "--help", ""] {
         assert_eq!(
             params(&["prompt", "opaque", text]),

@@ -197,6 +197,18 @@ impl App {
         let Some(agent) = self.agent_info(resolved.ws_idx, resolved.pane_id) else {
             return Err(agent_not_found(id, &params.target));
         };
+        if params.require_idle
+            && !matches!(
+                agent.agent_status,
+                crate::api::schema::AgentStatus::Idle | crate::api::schema::AgentStatus::Done
+            )
+        {
+            return Err(encode_error(
+                id,
+                "agent_busy",
+                "agent must become idle before accepting another prompt",
+            ));
+        }
         Ok(ValidatedAgentPrompt {
             id,
             ws_idx: resolved.ws_idx,
@@ -520,6 +532,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "A != B".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -620,6 +633,7 @@ mod tests {
             AgentPromptParams {
                 target: public_pane_id,
                 text: "A != B".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -649,6 +663,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "A != B".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -664,6 +679,7 @@ mod tests {
             AgentPromptParams {
                 target: "opencode".into(),
                 text: "wrong target".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -692,6 +708,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "hello".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -726,6 +743,7 @@ mod tests {
                 AgentPromptParams {
                     target: target.into(),
                     text: text.into(),
+                    require_idle: false,
                     wait: None,
                 },
             );
@@ -759,6 +777,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "unrelated prompt".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -774,6 +793,35 @@ mod tests {
             .is_err(),
             "blocked prompt wrote or scheduled terminal input"
         );
+    }
+
+    #[tokio::test]
+    async fn agent_prompt_with_require_idle_rejects_working_agent_without_writing() {
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_agent_name("reviewer".into());
+        terminal.set_detected_state(Some(Agent::GithubCopilot), AgentState::Working);
+        let (runtime, mut rx) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        app.state.insert_test_runtime(pane_id, runtime);
+
+        let response = run_deferred_agent_prompt(
+            &mut app,
+            "req",
+            AgentPromptParams {
+                target: "reviewer".into(),
+                text: "next prompt".into(),
+                require_idle: true,
+                wait: None,
+            },
+        );
+
+        let error: crate::api::schema::ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "agent_busy");
+        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -799,6 +847,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "A != B".into(),
+                require_idle: false,
                 wait: None,
             },
         );
@@ -878,6 +927,7 @@ mod tests {
             AgentPromptParams {
                 target: "reviewer".into(),
                 text: "A != B".into(),
+                require_idle: false,
                 wait: None,
             },
         );

@@ -6,6 +6,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from typing import ClassVar
@@ -15,6 +16,18 @@ from fore_rsi.config import AgentConfig, WorkflowConfig
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, create_tool_mcp
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
 from fore_rsi.utils.terminal import PaneLocation, ensure_terminal_pane, report_terminal_metadata, run_terminal
+
+
+@dataclass(frozen=True)
+class _PendingInput:
+    sequence: int
+    interrupted: bool = False
+
+    def settled(self, agent: dict[str, object]) -> bool:
+        if agent.get("agent_status") not in {"idle", "done"}:
+            return False
+        field = "state_change_seq" if self.interrupted else "completion_seq"
+        return int(agent.get(field) or 0) > self.sequence
 
 
 class AgentRuntime(ABC):
@@ -51,6 +64,10 @@ class AgentRuntime(ABC):
         self.tool_mcp = create_tool_mcp(self._tools) if self._tools else None
         self.harness_directory = session_directory / "harnesses" / self.harness_name
         self.pane_id: str | None = None
+        self._lifecycle = asyncio.Lock()
+        self._input = asyncio.Lock()
+        self._pending: _PendingInput | None = None
+        self._failed_claim: str | None = None
 
     @classmethod
     @abstractmethod
@@ -85,32 +102,49 @@ class AgentRuntime(ABC):
         """Bind the agent's pane and navigation identity, then start or attach the native CLI."""
         if is_entry and self.workgroup_name != WorkflowConfig.GLOBAL_WORKGROUP_NAME:
             raise ValueError("The workflow entry agent must belong to the global workgroup.")
-        executable = await self.ensure_installed()
-        previous = self.terminal_id
-        try:
-            await self._tool_mcp_host.publish(self.tool_mcp, address_file=self.tool_address_file)
-            command = self.build_launch_command(executable, system_prompt=system_prompt)
-            # Finish the terminal's ownership acknowledgement even on cancellation. Otherwise
-            # a stopped host can leave a pane that replays the previous launch's options.
-            claim = asyncio.create_task(self._claim_pane(workspace_id, command, is_entry))
+        async with self._lifecycle:
+            if self.terminal_id is not None:
+                raise RuntimeError("This runtime already controls a terminal.")
+            await self._remove_failed_claim()
+            executable = await self.ensure_installed()
+            created: list[str] = []
             try:
-                pane, agent = await asyncio.shield(claim)
-            except asyncio.CancelledError:
-                await claim
-                raise
-            await self._wait_for_cli(pane, agent)
-        except BaseException:
-            try:
-                if self.terminal_id is not None and self.terminal_id != previous:
-                    # The native editor need not be ready to accept quit keys yet.
-                    await run_terminal(
-                        ["pane", "remove", "--key", self._pane_key, "--terminal-id", self.terminal_id],
-                        self.terminal_session_name, capture_output=True,
-                    )
+                await self._tool_mcp_host.publish(self.tool_mcp, address_file=self.tool_address_file)
+                command = self.build_launch_command(executable, system_prompt=system_prompt)
+                # The terminal can allocate a pane before the launcher acknowledges it.
+                # Let the shielded claim record that ownership before rolling back.
+                claim = asyncio.create_task(self._claim_pane(workspace_id, command, is_entry, created))
+                try:
+                    pane, agent = await asyncio.shield(claim)
+                except asyncio.CancelledError as cancellation:
+                    try:
+                        await claim
+                    except Exception as error:
+                        cancellation.add_note(f"Terminal claim also failed: {error}")
+                    raise
+                await self._wait_for_cli(pane, agent)
+            except BaseException as error:
+                try:
+                    if created:
+                        self._failed_claim = created[0]
+                        await self._remove_failed_claim()
+                except Exception as cleanup_error:
+                    error.add_note(f"Terminal rollback failed: {cleanup_error}")
+                finally:
                     self.pane_id = self.terminal_id = None
-            finally:
-                await self._tool_mcp_host.unpublish(self.tool_mcp)
-            raise
+                    try:
+                        await self._tool_mcp_host.unpublish(self.tool_mcp)
+                    except Exception as cleanup_error:
+                        error.add_note(f"Tool rollback failed: {cleanup_error}")
+                raise
+
+    async def _remove_failed_claim(self) -> None:
+        if self._failed_claim is not None:
+            await run_terminal(
+                ["pane", "remove", "--key", self._pane_key, "--terminal-id", self._failed_claim],
+                self.terminal_session_name, capture_output=True,
+            )
+            self._failed_claim = None
 
     def _member_file(self, suffix: str) -> Path:
         """Keep group and member names distinct even on case-insensitive filesystems."""
@@ -124,7 +158,7 @@ class AgentRuntime(ABC):
         return self._member_file(".mcp-url")
 
     async def _claim_pane(
-        self, workspace_id: str, command: Sequence[str], is_entry: bool
+        self, workspace_id: str, command: Sequence[str], is_entry: bool, created: list[str]
     ) -> tuple[PaneLocation, dict[str, object]]:
         """Acquire the exact keyed command without waiting for native startup or sign-in."""
         session = self.terminal_session_name
@@ -136,6 +170,8 @@ class AgentRuntime(ABC):
             command=command, label=f"{self.workgroup_name}/{self.agent_name}",
         )
         target = pane["terminal_id"]
+        if pane.get("created"):
+            created.append(target)
         result = await run_terminal(
             ["agent", "start", target, "--kind", self.harness_name, "--pane", pane["pane_id"],
              "--managed-executable", command[0], "--no-wait", "--", *command[1:]],
@@ -165,12 +201,57 @@ class AgentRuntime(ABC):
 
     async def send_message(self, message: str) -> None:
         """Submit text to the recognized native editor, never to an unbound shell."""
-        await run_terminal(["agent", "prompt", self._target(), message], self.terminal_session_name, capture_output=True)
+        async with self._input:
+            if self._pending is not None:
+                agent = await self._bound_agent()
+                if agent is None or not self._pending.settled(agent):
+                    raise RuntimeError("The previous input has not settled. Wait before submitting again.")
+                self._pending = None
+            target = self._target()
+            send = asyncio.create_task(run_terminal(
+                ["agent", "prompt", "--require-idle", "--", target, message],
+                self.terminal_session_name, capture_output=True,
+            ))
+            try:
+                result = await asyncio.shield(send)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    result = await send
+                    self._record_submission(result.stdout)
+                except Exception as error:
+                    cancellation.add_note(f"Prompt acknowledgement also failed: {error}")
+                raise
+            self._record_submission(result.stdout)
+
+    def _record_submission(self, response: str) -> None:
+        agent = json.loads(response)["result"]["agent"]
+        self._pending = _PendingInput(agent["state_change_seq"])
 
     async def wait_until_idle(self) -> None:
-        """Wait for native idle or done; a permission prompt still holds the execution slot."""
+        """Wait for settlement after the most recent acknowledged input."""
+        stale_since: float | None = None
+        while True:
+            async with self._input:
+                pending = self._pending
+                if pending is None:
+                    target = self._target()
+                    break
+                agent = await self._bound_agent()
+                if agent is None:
+                    raise RuntimeError("The bound agent has exited.")
+                if pending.settled(agent):
+                    self._pending = None
+                    return
+                if agent["agent_status"] in {"working", "blocked"}:
+                    stale_since = None
+                else:
+                    now = asyncio.get_running_loop().time()
+                    stale_since = now if stale_since is None else stale_since
+                    if now - stale_since >= 5:
+                        raise RuntimeError("The terminal has not confirmed settlement of the submitted input.")
+            await asyncio.sleep(WorkflowConfig.STOP_POLL_INTERVAL_SECONDS)
         await run_terminal(
-            ["agent", "wait", self._target(), "--until", "idle", "--until", "done"],
+            ["agent", "wait", target, "--until", "idle", "--until", "done"],
             self.terminal_session_name, capture_output=True,
         )
 
@@ -199,15 +280,30 @@ class AgentRuntime(ABC):
 
     async def interrupt(self) -> None:
         """Interrupt the foreground turn without closing the native conversation."""
-        await run_terminal(["agent", "send-keys", self._target(), "esc"], self.terminal_session_name, capture_output=True)
+        async with self._input:
+            agent = await self._bound_agent()
+            if agent is None:
+                raise RuntimeError("The bound agent has exited.")
+            if agent["agent_status"] in {"idle", "done"} and (
+                self._pending is None or self._pending.settled(agent)
+            ):
+                self._pending = None
+                return
+            await run_terminal(
+                ["agent", "send-keys", self._target(), "esc"], self.terminal_session_name, capture_output=True,
+            )
+            self._pending = _PendingInput(agent["state_change_seq"], interrupted=True)
 
     async def close(self) -> None:
         """Stop this agent and remove its tool endpoint, preserving the native conversation."""
-        try:
-            await self._close_cli()
-            self.pane_id = self.terminal_id = None
-        finally:
-            await self._tool_mcp_host.unpublish(self.tool_mcp)
+        async with self._lifecycle, self._input:
+            try:
+                await self._remove_failed_claim()
+                await self._close_cli()
+                self.pane_id = self.terminal_id = None
+                self._pending = None
+            finally:
+                await self._tool_mcp_host.unpublish(self.tool_mcp)
 
     async def _close_cli(self) -> None:
         """Quit only the bound editor without submitting any draft already in its input buffer."""

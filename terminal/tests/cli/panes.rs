@@ -1,6 +1,35 @@
 use super::harness::*;
 
 #[test]
+fn pane_ensure_marks_only_the_request_that_created_the_terminal() {
+    let base = unique_test_dir();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let socket_path = runtime_dir.join("herdr.sock");
+
+    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    wait_for_socket(&socket_path, Duration::from_secs(5));
+    let args = [
+        "pane",
+        "ensure",
+        "--key",
+        "fore-rsi.agent/global/test",
+        "--cwd",
+        base.to_str().unwrap(),
+        "--label",
+        "test pane",
+    ];
+    let first = run_cli_json(&socket_path, &args);
+    let second = run_cli_json(&socket_path, &args);
+    let created = &first["result"]["pane"];
+    let reused = &second["result"]["pane"];
+    assert_eq!(created["created"], true);
+    assert!(reused.get("created").is_none());
+    assert_eq!(created["terminal_id"], reused["terminal_id"]);
+    cleanup_spawned_herdr(herdr, base);
+}
+
+#[test]
 fn pane_close_only_removes_the_target_tab_when_other_tabs_exist() {
     let base = unique_test_dir();
     let config_home = base.join("config");

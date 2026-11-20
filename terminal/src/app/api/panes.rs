@@ -87,7 +87,10 @@ impl App {
             Some(self.workspace_creation_source().unwrap_or(0))
         };
         match self.open_managed_pane(workspace, params) {
-            Ok(pane) => encode_success(id, ResponseResult::PaneInfo { pane }),
+            Ok(mut pane) => {
+                pane.created = true;
+                encode_success(id, ResponseResult::PaneInfo { pane })
+            }
             Err(error) => encode_error(id, "pane_ensure_failed", error.to_string()),
         }
     }

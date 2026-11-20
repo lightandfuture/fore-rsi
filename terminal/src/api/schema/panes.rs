@@ -528,6 +528,9 @@ pub struct PaneInfo {
     /// The key assigned by pane.ensure follows the terminal across moves and restores.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_key: Option<String>,
+    /// Set only in pane.ensure replies when this request created the terminal.
+    #[serde(default, skip_serializing_if = "super::is_false")]
+    pub created: bool,
     pub workspace_id: String,
     pub tab_id: String,
     pub focused: bool,

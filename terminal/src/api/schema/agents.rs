@@ -205,6 +205,9 @@ cli_params! {
     pub struct AgentPromptParams => AgentPromptProjection {
         pub target: String => Field::new(String::new()).input(bindings::target()),
         pub text: String => Field::new(String::new()).input(bindings::text_position("text", "TEXT", 1).verbatim()),
+        /// Refuse input while the recognized editor is still processing an earlier turn.
+        #[serde(default, skip_serializing_if = "super::is_false")]
+        pub require_idle: bool => Field::new(false).input(bindings::require_idle()),
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub wait: Option<AgentPromptWaitOptions> => Field::new(None).input(bindings::wait_presence()),
     }

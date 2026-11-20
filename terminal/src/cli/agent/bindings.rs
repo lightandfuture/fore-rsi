@@ -38,6 +38,14 @@ pub(crate) fn text_position(
     .value_name(value_name)
 }
 
+pub(crate) fn require_idle() -> Input<bool> {
+    Input::flag("require-idle", |slot, _| {
+        *slot = true;
+        Ok(())
+    })
+    .help("Submit only to an idle agent")
+}
+
 pub(crate) fn until() -> Input<Vec<AgentStatus>> {
     Input::<Vec<AgentStatus>>::value("until", "STATUS", |slot, value| {
         slot.push(parse_choice(STATUSES, "agent status", value)?);

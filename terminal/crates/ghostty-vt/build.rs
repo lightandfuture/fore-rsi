@@ -111,7 +111,10 @@ fn resolve_zig(
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
-        assert!(lines.len() >= 2, "terminal toolchain preparation returned incomplete paths");
+        assert!(
+            lines.len() >= 2,
+            "terminal toolchain preparation returned incomplete paths"
+        );
         let zig = lines[0].to_owned();
         assert_eq!(
             zig_version(&zig).as_deref(),

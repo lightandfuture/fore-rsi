@@ -778,6 +778,10 @@
             "agent_status": {
               "$ref": "#/schemas/event/$defs/AgentStatus"
             },
+            "created": {
+              "description": "Set only in pane.ensure replies when this request created the terminal.",
+              "type": "boolean"
+            },
             "cwd": {
               "type": [
                 "string",
@@ -1237,6 +1241,10 @@
       "$defs": {
         "AgentPromptParams": {
           "properties": {
+            "require_idle": {
+              "description": "Refuse input while the recognized editor is still processing an earlier turn.",
+              "type": "boolean"
+            },
             "target": {
               "type": "string"
             },
@@ -7983,6 +7991,10 @@
             },
             "agent_status": {
               "$ref": "#/schemas/success_response/$defs/AgentStatus"
+            },
+            "created": {
+              "description": "Set only in pane.ensure replies when this request created the terminal.",
+              "type": "boolean"
             },
             "cwd": {
               "type": [

@@ -22,33 +22,33 @@ class NamedConversationRuntime(AgentRuntime):
     ) -> list[str]:
         """Prepare a replayable invocation; the PTY child selects the member's native session at exec time."""
         self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        instructions = self._member_file(".instructions.md")
+        instructions = self.get_agent_file_path(".instructions.md")
         if system_prompt is not None:
             write_private_text(instructions, system_prompt)
         options = ["--model", self.agent_config.model] if self.agent_config.model is not None else []
         if self.agent_config.effort is not None:
-            options.extend(self._effort_args(self.agent_config.effort))
+            options.extend(self.effort_args(self.agent_config.effort))
         if self.tool_mcp is not None:
-            options.extend(self._tool_mcp_args())
+            options.extend(self.tool_mcp_args())
         # Both helpers use only the standard library. PTY children must not import the
         # working directory or visit editable checkouts via site-packages startup hooks.
         return [
             sys.executable, "-I", "-S", str(terminal_executable().with_name("native_launch.py")),
-            self.harness_name, str(executable), str(self._member_file("")), str(self._native_home()),
+            self.harness_name, str(executable), str(self.get_agent_file_path("")), str(self.native_home()),
             str(instructions) if system_prompt is not None else "", *options, *arguments,
         ]
 
     @abstractmethod
-    def _effort_args(self, effort: ReasoningEffort) -> list[str]:
+    def effort_args(self, effort: ReasoningEffort) -> list[str]:
         """Render an explicit per-member reasoning override for the native CLI."""
         ...
 
     @abstractmethod
-    def _native_home(self) -> Path:
+    def native_home(self) -> Path:
         """Return the native profile used to open the interactive session."""
         ...
 
-    def _stdio_server(self) -> dict[str, object]:
+    def stdio_server(self) -> dict[str, object]:
         """Connect only this member's tools, including after the workflow host changes ports."""
         bridge = terminal_executable().with_name("tool_stdio.py")
-        return {"command": sys.executable, "args": ["-I", "-S", str(bridge), str(self.tool_address_file)]}
+        return {"command": sys.executable, "args": ["-I", "-S", str(bridge), str(self.get_agent_file_path(".mcp-url"))]}

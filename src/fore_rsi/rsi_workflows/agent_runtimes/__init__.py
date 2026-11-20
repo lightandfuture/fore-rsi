@@ -18,7 +18,7 @@ from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
 
 def create_agent_runtime(
     agent_config: AgentConfig,
-    session_directory: Path,
+    workflow_directory: Path,
     *,
     workgroup_name: str,
     agent_name: str,
@@ -28,7 +28,7 @@ def create_agent_runtime(
     """Construct the selected runtime for one workflow member without opening its pane."""
     runtime_class = get_agent_runtime_class(agent_config.harness)
     return runtime_class(
-        agent_config, session_directory,
+        agent_config, workflow_directory,
         workgroup_name=workgroup_name, agent_name=agent_name, tool_mcp_host=tool_mcp_host, tools=tools,
     )
 

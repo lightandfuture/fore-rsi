@@ -140,6 +140,9 @@ pub(super) fn wait_for_agent(
     let last_event_sequence = event_hub.current_sequence();
     let initial = match agent_get(&request_id, &params.target, api_tx) {
         Ok(agent) => agent,
+        Err(response) if params.until_stopped && response.error.code == "agent_not_found" => {
+            return agent_wait_stopped(request_id).map(Some);
+        }
         Err(response) => {
             return serde_json::to_string(&response)
                 .map(Some)
@@ -147,7 +150,9 @@ pub(super) fn wait_for_agent(
         }
     };
     let until = agent_wait_statuses(params.until);
-    if agent_wait_matches(&initial, &until, None) {
+    if (params.until_ready && initial.interactive_ready)
+        || (!params.until_ready && agent_wait_matches(&initial, &until, None))
+    {
         return agent_wait_success(request_id, initial).map(Some);
     }
 
@@ -160,6 +165,8 @@ pub(super) fn wait_for_agent(
             initial,
             last_event_sequence,
             after_state_change_seq: None,
+            until_ready: params.until_ready,
+            until_stopped: params.until_stopped,
             accept_transient_status: true,
             timeout_kind: AgentWaitTimeoutKind::Status,
         },
@@ -169,6 +176,7 @@ pub(super) fn wait_for_agent(
         running,
     )? {
         Some(AgentWaitOutcome::Matched(agent)) => agent_wait_success(request_id, *agent).map(Some),
+        Some(AgentWaitOutcome::Stopped) => agent_wait_stopped(request_id).map(Some),
         Some(AgentWaitOutcome::Response(response)) => Ok(Some(response)),
         None => Ok(None),
     }
@@ -272,6 +280,8 @@ pub(super) fn prompt_agent(
                 initial,
                 last_event_sequence,
                 after_state_change_seq: Some(prompt_state_change_seq),
+                until_ready: false,
+                until_stopped: false,
                 accept_transient_status: true,
                 timeout_kind,
             },
@@ -285,6 +295,7 @@ pub(super) fn prompt_agent(
         };
         initial = match outcome {
             AgentWaitOutcome::Matched(agent) => *agent,
+            AgentWaitOutcome::Stopped => return agent_wait_stopped(request_id).map(Some),
             AgentWaitOutcome::Response(response) => return Ok(Some(response)),
         };
     }
@@ -303,6 +314,8 @@ pub(super) fn prompt_agent(
             // the activity gate still terminate this settled-state wait.
             last_event_sequence,
             after_state_change_seq: None,
+            until_ready: false,
+            until_stopped: false,
             accept_transient_status: false,
             timeout_kind: AgentWaitTimeoutKind::Status,
         },
@@ -316,6 +329,7 @@ pub(super) fn prompt_agent(
     };
     let agent = match outcome {
         AgentWaitOutcome::Matched(agent) => *agent,
+        AgentWaitOutcome::Stopped => return agent_wait_stopped(request_id).map(Some),
         AgentWaitOutcome::Response(response) => return Ok(Some(response)),
     };
     agent_prompt_success(request_id, agent).map(Some)
@@ -346,6 +360,8 @@ struct ResolvedAgentWait {
     initial: crate::api::schema::AgentInfo,
     last_event_sequence: u64,
     after_state_change_seq: Option<u64>,
+    until_ready: bool,
+    until_stopped: bool,
     accept_transient_status: bool,
     timeout_kind: AgentWaitTimeoutKind,
 }
@@ -358,6 +374,7 @@ enum AgentWaitTimeoutKind {
 
 enum AgentWaitOutcome {
     Matched(Box<crate::api::schema::AgentInfo>),
+    Stopped,
     Response(String),
 }
 
@@ -401,6 +418,9 @@ fn wait_for_resolved_agent(
                     ..
                 } if event_pane == pane_id => {
                     if released {
+                        if wait.until_stopped {
+                            return Ok(Some(AgentWaitOutcome::Stopped));
+                        }
                         if let Some(status) = final_status
                             .filter(|status| wait.until.contains(status))
                             .or(matched_event_status)
@@ -434,6 +454,9 @@ fn wait_for_resolved_agent(
                 EventData::PaneMoved {
                     previous_pane_id, ..
                 } if previous_pane_id == pane_id => {
+                    if wait.until_stopped {
+                        return Ok(Some(AgentWaitOutcome::Stopped));
+                    }
                     return agent_wait_not_running(request_id)
                         .map(AgentWaitOutcome::Response)
                         .map(Some);
@@ -446,6 +469,9 @@ fn wait_for_resolved_agent(
                     pane_id: event_pane,
                     ..
                 } if event_pane == pane_id => {
+                    if wait.until_stopped {
+                        return Ok(Some(AgentWaitOutcome::Stopped));
+                    }
                     return agent_wait_not_running(request_id)
                         .map(AgentWaitOutcome::Response)
                         .map(Some);
@@ -457,6 +483,9 @@ fn wait_for_resolved_agent(
         if should_probe {
             let current = match agent_get(&request_id, &wait.target, api_tx) {
                 Ok(agent) => agent,
+                Err(response) if wait.until_stopped && response.error.code == "agent_not_found" => {
+                    return Ok(Some(AgentWaitOutcome::Stopped));
+                }
                 Err(response) => {
                     return agent_wait_probe_error(response)
                         .map(AgentWaitOutcome::Response)
@@ -473,19 +502,27 @@ fn wait_for_resolved_agent(
                     .map(AgentWaitOutcome::Response)
                     .map(Some);
             }
-            if let Some(status) = matched_event_status {
-                let mut matched = current;
-                matched.agent_status = status;
-                return Ok(Some(AgentWaitOutcome::Matched(Box::new(matched))));
-            }
-            if agent_wait_matches(&current, &wait.until, wait.after_state_change_seq) {
+            if wait.until_ready && current.interactive_ready {
                 return Ok(Some(AgentWaitOutcome::Matched(Box::new(current))));
+            }
+            if !wait.until_ready {
+                if let Some(status) = matched_event_status {
+                    let mut matched = current;
+                    matched.agent_status = status;
+                    return Ok(Some(AgentWaitOutcome::Matched(Box::new(matched))));
+                }
+                if agent_wait_matches(&current, &wait.until, wait.after_state_change_seq) {
+                    return Ok(Some(AgentWaitOutcome::Matched(Box::new(current))));
+                }
             }
         }
 
         if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
             let current = match agent_get(&request_id, &wait.target, api_tx) {
                 Ok(agent) => agent,
+                Err(response) if wait.until_stopped && response.error.code == "agent_not_found" => {
+                    return Ok(Some(AgentWaitOutcome::Stopped));
+                }
                 Err(response) => {
                     return agent_wait_probe_error(response)
                         .map(AgentWaitOutcome::Response)
@@ -502,7 +539,9 @@ fn wait_for_resolved_agent(
                     .map(AgentWaitOutcome::Response)
                     .map(Some);
             }
-            if agent_wait_matches(&current, &wait.until, wait.after_state_change_seq) {
+            if (wait.until_ready && current.interactive_ready)
+                || (!wait.until_ready && agent_wait_matches(&current, &wait.until, wait.after_state_change_seq))
+            {
                 return Ok(Some(AgentWaitOutcome::Matched(Box::new(current))));
             }
             return agent_wait_timeout(request_id, wait.timeout_kind, &current)
@@ -643,6 +682,14 @@ fn agent_wait_success(
     serde_json::to_string(&SuccessResponse {
         id: request_id,
         result: ResponseResult::AgentInfo { agent },
+    })
+    .map_err(std::io::Error::other)
+}
+
+fn agent_wait_stopped(request_id: String) -> std::io::Result<String> {
+    serde_json::to_string(&SuccessResponse {
+        id: request_id,
+        result: ResponseResult::Ok {},
     })
     .map_err(std::io::Error::other)
 }

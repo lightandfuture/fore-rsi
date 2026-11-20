@@ -54,6 +54,22 @@ pub(crate) fn until() -> Input<Vec<AgentStatus>> {
     .configure(|arg| choices(arg, STATUSES))
 }
 
+pub(crate) fn until_ready() -> Input<bool> {
+    Input::flag("until-ready", |slot, _| {
+        *slot = true;
+        Ok(())
+    })
+    .help("Wait until the managed agent accepts input")
+}
+
+pub(crate) fn until_stopped() -> Input<bool> {
+    Input::flag("until-stopped", |slot, _| {
+        *slot = true;
+        Ok(())
+    })
+    .help("Wait until the agent process is released")
+}
+
 pub(crate) fn timeout() -> Input<Option<u64>> {
     Input::value("timeout", "MS", |slot, value| {
         *slot = Some(super::super::parse_u64_flag("--timeout", value)?);
@@ -269,7 +285,7 @@ pub(crate) fn command() -> Command {
             .group(ArgGroup::new("rename").args(["name", "clear"]).required(true)))
         .subcommand(leaf("wait", AgentWaitProjection::arguments(), "Wait until an agent reaches one of the requested states")
             .override_usage("herdr agent wait <TARGET> [OPTIONS]")
-            .after_help("Without --until, matches idle, done, or blocked. Use --until unknown explicitly when needed. Without --timeout, waits indefinitely."))
+            .after_help("Use --until-ready to wait for the managed agent to accept input, or --until-stopped to wait for process release. Without --until, matches idle, done, or blocked. Use --until unknown explicitly when needed. Without --timeout, waits indefinitely."))
         .subcommand(leaf("prompt", AgentPromptProjection::arguments(), "Submit a prompt to an agent")
             .args(AgentPromptWaitProjection::arguments().into_iter().map(|arg| arg.requires("wait")))
             .override_usage("herdr agent prompt <TARGET> <TEXT> [OPTIONS]")

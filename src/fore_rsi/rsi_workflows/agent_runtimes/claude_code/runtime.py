@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from fore_rsi.config import ReasoningEffort
+from fore_rsi.rsi_workflows.agent_runtimes.base import MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.installation import ensure_cli_installed
 from fore_rsi.rsi_workflows.agent_runtimes.named_conversation import NamedConversationRuntime
 
@@ -16,6 +17,16 @@ class ClaudeCodeAgentRuntime(NamedConversationRuntime):
     """Run Claude Code using its usual settings and an explicit member conversation UUID."""
 
     harness_name = "claude"
+
+    async def send_message(
+        self,
+        message: str,
+        mode: MessageDeliveryMode = "queue",
+    ) -> None:
+        """Report the missing local Claude Code queue and steering API explicitly."""
+        raise NotImplementedError(
+            f"Claude Code has no documented native local {mode} message API for this runtime."
+        )
 
     @classmethod
     async def ensure_installed(cls) -> Path:
@@ -27,15 +38,15 @@ class ClaudeCodeAgentRuntime(NamedConversationRuntime):
             shell="bash",
         )
 
-    def _effort_args(self, effort: ReasoningEffort) -> list[str]:
+    def effort_args(self, effort: ReasoningEffort) -> list[str]:
         """Set the reasoning level for this Claude Code invocation."""
         return ["--effort", effort]
 
-    def _native_home(self) -> Path:
+    def native_home(self) -> Path:
         """Use the user's Claude Code settings and credential store without copying them."""
         return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser().resolve()
 
-    def _tool_mcp_args(self) -> list[str]:
+    def tool_mcp_args(self) -> list[str]:
         """Add this member's tool client without replacing other configured MCP servers."""
-        config = {"mcpServers": {"fore_rsi": self._stdio_server()}}
+        config = {"mcpServers": {"fore_rsi": self.stdio_server()}}
         return [f"--mcp-config={json.dumps(config)}"]

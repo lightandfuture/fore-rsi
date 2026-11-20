@@ -4,20 +4,24 @@
 """Run one workflow member in the native Pi terminal with its own conversation and tools."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
-from dataclasses import replace
+from collections.abc import Sequence
 import json
 import os
 from pathlib import Path
+import secrets
+import socket
 from uuid import uuid4
 
 import httpx2
 
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
+from fore_rsi.config import AgentConfig
+from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.installation import ensure_cli_installed
 from fore_rsi.rsi_workflows.agent_runtimes.pi.conversation import (
-    ObserverEndpoint, PiObservation, fork_recording, recorded_observation,
+    IpcEndpoint, PiObservation, recorded_observation,
 )
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
 from fore_rsi.utils.paths import write_private_text
 from fore_rsi.utils.terminal import PaneLocation, run_terminal, terminal_executable
 
@@ -26,6 +30,38 @@ class PiAgentRuntime(AgentRuntime):
     """Runtime contract for Pi's native CLI."""
 
     harness_name = "pi"
+
+    def __init__(
+        self,
+        agent_config: AgentConfig,
+        workflow_directory: Path,
+        *,
+        workgroup_name: str,
+        agent_name: str,
+        tool_mcp_host: ToolMcpHost,
+        tools: Sequence[AgentTool] = (),
+    ) -> None:
+        """Create a Pi runtime with an in-memory IPC address shared with its extension."""
+        super().__init__(
+            agent_config,
+            workflow_directory,
+            workgroup_name=workgroup_name,
+            agent_name=agent_name,
+            tool_mcp_host=tool_mcp_host,
+            tools=tools,
+        )
+        self.ipc_endpoint = self.create_ipc_endpoint()
+
+    def create_ipc_endpoint(self) -> IpcEndpoint:
+        """Choose a private local socket, using a reserved TCP port on Windows."""
+        endpoint: IpcEndpoint = {"token": secrets.token_urlsafe(32)}
+        if os.name == "nt":
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                endpoint["port"] = listener.getsockname()[1]
+        else:
+            endpoint["socket_path"] = f"/tmp/fore-rsi-{uuid4().hex}.sock"
+        return endpoint
 
     @classmethod
     async def ensure_installed(cls) -> Path:
@@ -52,130 +88,104 @@ class PiAgentRuntime(AgentRuntime):
         integrations = terminal_executable().parent
         if not hook.is_file():
             hook = integrations / hook.name
-        native = [
-            "--extension", str(integrations / "observation.ts"),
-            "--fore-rsi-observation-file", str(self._member_file(".observation.json")),
+        native = ["--extension", str(integrations / "observation.ts")]
+        if "socket_path" in self.ipc_endpoint:
+            native.extend(["--fore-rsi-observation-socket", self.ipc_endpoint["socket_path"]])
+        else:
+            native.extend(["--fore-rsi-observation-port", str(self.ipc_endpoint["port"])])
+        native.extend([
+            "--fore-rsi-observation-token", self.ipc_endpoint["token"],
             "--extension", str(hook), "--session-dir", str(self.harness_directory),
-            "--session", str(self._member_file(".jsonl")),
-        ]
+            "--session", str(self.get_agent_file_path(".jsonl")),
+        ])
         if self.agent_config.model is not None:
             native.extend(["--model", self.agent_config.model])
         if self.agent_config.effort is not None:
             native.extend(["--thinking", self.agent_config.effort])
-        instructions = self._member_file(".instructions.md")
+        instructions = self.get_agent_file_path(".instructions.md")
         if system_prompt is not None:
             write_private_text(instructions, system_prompt)
         if instructions.is_file():
             native.extend(["--append-system-prompt", str(instructions)])
         return super().build_launch_command(executable, [*native, *arguments])
 
-    async def inspect(self) -> dict[str, object]:
-        """Return Pi's session path, ID, selected model and effort, and the terminal's execution state.
-
-        A stopped member reports its last observed or recorded selection; unobserved settings are None.
-        """
-        info, state = await self._observation()
-        return {
-            "session_file": info["session_file"], "session_id": info["session_id"],
-            "model": info["model"], "effort": info["effort"], "state": state,
-        }
-
-    async def events(self) -> AsyncIterator[dict[str, object]]:
-        """Subscribe to this running Pi. The first `subscribed` event marks the live, no-replay boundary.
-
-        Subsequent events carry text deltas, tool start/end, model errors and final settlement.
-        Closing the iterator releases only the observation connection.
-        """
-        info, state = await self._observation()
-        endpoint = info.get("endpoint")
-        if state == "stopped" or endpoint is None:
-            raise RuntimeError("Start the Pi member before subscribing to its events.")
-        async with self._observer_client(endpoint) as client:
-            async with client.stream("GET", "/events", timeout=None) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    yield json.loads(line)
-
-    async def fork(self) -> "PiAgentRuntime":
-        """Fork a saved conversation at its active leaf; the independent member starts only on `start()`."""
-        info, state = await self._observation()
-        if state != "stopped" and (endpoint := info.get("endpoint")):
-            async with self._observer_client(endpoint) as client:
-                response = await client.get("/fork-point")
-                response.raise_for_status()
-                info = response.json()
-        source = Path(info["session_file"]).resolve()
-        if not source.is_file():
-            raise FileNotFoundError("Pi has no saved conversation to fork. Send a message first.")
-        config = replace(self.agent_config)
-        # A live or cleanly closed editor reports its actual selection. Otherwise let Pi restore
-        # recorded settings at startup rather than turning a past response into a model override.
-        if "fork_point" in info:
-            config.model, config.effort = info["model"], info["effort"]
-        child = PiAgentRuntime(
-            config, self.session_directory, workgroup_name=self.workgroup_name, agent_name=f"fork-{uuid4().hex}",
-            tool_mcp_host=self._tool_mcp_host, tools=self._tools,
-        )
-        destination = child._member_file(".jsonl")
-        await fork_recording(await self.ensure_installed(), source, destination, info.get("fork_point"))
-        instructions = self._member_file(".instructions.md")
+    async def close(self) -> None:
+        """Stop Pi and remove a private Unix socket left by an interrupted native process."""
         try:
-            if instructions.is_file():
-                write_private_text(child._member_file(".instructions.md"), instructions.read_text(encoding="utf-8"))
-        except BaseException:
-            destination.unlink(missing_ok=True)
-            raise
-        return child
+            await super().close()
+        finally:
+            socket_path = self.ipc_endpoint.get("socket_path")
+            if socket_path:
+                Path(socket_path).unlink(missing_ok=True)
 
-    @staticmethod
-    def _observer_client(endpoint: ObserverEndpoint) -> httpx2.AsyncClient:
-        """Connect only to the member's local Pi process, independently of workstation proxy settings."""
+    async def send_message(
+        self,
+        message: str,
+        mode: MessageDeliveryMode = "queue",
+    ) -> None:
+        """Deliver a user message through Pi's native steer or follow-up queue."""
+        async with self.message_lock:
+            _, state = await self.observation()
+            if state == "stopped":
+                raise RuntimeError("Start the Pi member before sending a native message.")
+            async with self.observer_client() as client:
+                response = await client.post(
+                    "/message",
+                    json={"message": message, "mode": mode},
+                )
+                response.raise_for_status()
+
+    def observer_client(self) -> httpx2.AsyncClient:
+        """Connect to the member's private local IPC endpoint without using workstation proxies."""
+        transport = None
+        base_url = "http://127.0.0.1"
+        if "socket_path" in self.ipc_endpoint:
+            transport = httpx2.AsyncHTTPTransport(uds=self.ipc_endpoint["socket_path"])
+            base_url = "http://pi"
+        else:
+            base_url = f"http://127.0.0.1:{self.ipc_endpoint['port']}"
         return httpx2.AsyncClient(
-            base_url=f"http://127.0.0.1:{endpoint['port']}", trust_env=False,
-            headers={"Authorization": f"Bearer {endpoint['token']}"},
+            base_url=base_url,
+            transport=transport,
+            trust_env=False,
+            headers={"Authorization": f"Bearer {self.ipc_endpoint['token']}"},
         )
 
-    def _reported_observation(self) -> PiObservation | None:
-        """Read one atomic publication from the native editor, including before its first persisted turn."""
-        try:
-            return json.loads(self._member_file(".observation.json").read_bytes())
-        except FileNotFoundError:
-            return None
+    async def live_observation(self) -> PiObservation:
+        """Read live session settings directly from the Pi extension over local IPC."""
+        async with self.observer_client() as client:
+            response = await client.get("/state")
+            response.raise_for_status()
+            return response.json()
 
-    async def _observation(self) -> tuple[PiObservation, str]:
-        """Pair the native settings with their live terminal owner; a stale endpoint is never proof of execution."""
-        agent = await self._bound_agent()
-        info = self._reported_observation()
-        if agent is None or info is None:
-            path = Path(info["session_file"]) if info else self._member_file(".jsonl")
-            info = await asyncio.to_thread(recorded_observation, path, info)
+    async def observation(self) -> tuple[PiObservation, str]:
+        """Pair Pi's live session settings with its bound terminal owner."""
+        agent = await self.get_agent()
         if agent is None:
+            info = await asyncio.to_thread(recorded_observation, self.get_agent_file_path(".jsonl"))
             return info, "stopped"
+        info = await self.live_observation()
         session = agent.get("agent_session")
         if session and (session["kind"] != "path"
                         or Path(session["value"]).resolve() != Path(info["session_file"]).resolve()):
             raise RuntimeError("Pi is no longer observing the conversation reported by its terminal.")
         return info, agent["agent_status"]
 
-    async def _wait_for_cli(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
-        """Wait for Pi itself to report the member's open conversation before accepting input."""
-        target = pane["terminal_id"]
-        agent = await super()._wait_for_cli(pane, agent)
-        expected_file = self._member_file(".jsonl").resolve()
-        # A process or a saved layout can report idle before the native editor accepts input.
-        async with asyncio.timeout(30):
-            while True:
-                if agent.get("screen_detection_skipped") and (session := agent.get("agent_session")):
-                    if session["kind"] != "path" or Path(session["value"]).resolve() != expected_file:
-                        raise RuntimeError(f"Pi in pane {pane['pane_id']} is using another conversation.")
-                    info = self._reported_observation()
-                    if info and info.get("endpoint") and Path(info["session_file"]).resolve() == expected_file:
-                        return agent
-                await asyncio.sleep(0.1)
-                result = await run_terminal(["agent", "get", target], self.terminal_session_name, capture_output=True)
-                agent = json.loads(result.stdout)["result"]["agent"]
+    async def wait_for_agent_ready(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
+        """Confirm Pi's record file and IPC endpoint after the terminal reports readiness."""
+        agent = await super().wait_for_agent_ready(pane, agent)
+        expected_file = self.get_agent_file_path(".jsonl").resolve()
+        agent_session = agent.get("agent_session")
+        if not isinstance(agent_session, dict) or agent_session.get("kind") != "path":
+            raise RuntimeError(f"Pi in pane {pane['pane_id']} did not report its record file.")
+        if Path(agent_session["value"]).resolve() != expected_file:
+            raise RuntimeError(f"Pi in pane {pane['pane_id']} is using another record file.")
+        info = await self.live_observation()
+        if Path(info["session_file"]).resolve() != expected_file:
+            raise RuntimeError(f"Pi in pane {pane['pane_id']} reported another record file.")
+        return agent
 
-    def _tool_mcp_args(self) -> list[str]:
+    def tool_mcp_args(self) -> list[str]:
         """Pass the discovery file, not a host-specific capability, in the replayable argv."""
         extension = terminal_executable().with_name("tool_mcp.ts")
-        return ["--extension", str(extension), "--fore-rsi-mcp-file", str(self.tool_address_file)]
+        return ["--extension", str(extension), "--fore-rsi-mcp-file", str(self.get_agent_file_path(".mcp-url"))]

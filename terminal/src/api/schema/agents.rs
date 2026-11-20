@@ -36,6 +36,10 @@ cli_params! {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub until: Vec<AgentStatus> => Field::new(Vec::new()).input(bindings::until()
             .help("State to match; repeat for more than one state")),
+        #[serde(default, skip_serializing_if = "super::is_false")]
+        pub until_ready: bool => Field::new(false).input(bindings::until_ready()),
+        #[serde(default, skip_serializing_if = "super::is_false")]
+        pub until_stopped: bool => Field::new(false).input(bindings::until_stopped()),
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub timeout_ms: Option<u64> => Field::new(None).input(bindings::timeout()
             .help("Fail after this many milliseconds")),

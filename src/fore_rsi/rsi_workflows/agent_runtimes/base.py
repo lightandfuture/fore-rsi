@@ -129,6 +129,12 @@ class AgentRuntime(ABC):
         """Deliver a prompt through the harness's native queue or steering interface."""
         ...
 
+    async def wait_for_settle(self) -> None:
+        """Wait until this harness's current native attempt has settled."""
+        raise NotImplementedError(
+            f"Harness {self.harness_name!r} does not expose native settle waiting."
+        )
+
     async def close(self) -> None:
         """Stop this agent and remove its tool endpoint, preserving the native conversation."""
         async with self.lifecycle, self.message_lock:

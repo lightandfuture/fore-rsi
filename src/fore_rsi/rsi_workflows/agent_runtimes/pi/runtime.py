@@ -137,14 +137,14 @@ class PiAgentRuntime(AgentRuntime):
             _, state = await self.session_state()
             if state == "stopped":
                 raise RuntimeError("Start the Pi member before sending a native message.")
-            async with self.observer_client() as client:
+            async with self.ipc_client() as client:
                 response = await client.post(
                     "/message",
                     json={"message": message, "mode": mode},
                 )
                 response.raise_for_status()
 
-    def observer_client(self) -> httpx2.AsyncClient:
+    def ipc_client(self) -> httpx2.AsyncClient:
         """Connect to the member's private local IPC endpoint without using workstation proxies."""
         transport = None
         base_url = "http://127.0.0.1"
@@ -162,7 +162,7 @@ class PiAgentRuntime(AgentRuntime):
 
     async def live_session_state(self) -> PiSessionState:
         """Read live session settings directly from the Pi extension over local IPC."""
-        async with self.observer_client() as client:
+        async with self.ipc_client() as client:
             response = await client.get("/state")
             response.raise_for_status()
             return response.json()

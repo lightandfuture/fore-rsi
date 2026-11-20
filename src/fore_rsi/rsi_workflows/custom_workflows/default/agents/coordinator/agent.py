@@ -72,4 +72,4 @@ class CoordinatorAgent(BaseAgent):
             section_transition="Here are the Coordinator's instructions for this workflow stage.",
         )
         await coordinator.send_message(user_prompt, mode="queue")
-        return {}
+        return {"coordinator_prompt": user_prompt}

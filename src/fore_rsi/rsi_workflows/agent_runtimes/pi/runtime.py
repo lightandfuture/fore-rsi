@@ -95,7 +95,7 @@ class PiAgentRuntime(AgentRuntime):
         integrations = terminal_executable().parent
         if not hook.is_file():
             hook = integrations / hook.name
-        native = ["--extension", str(integrations / "ipc.ts")]
+        native = ["--approve", "--extension", str(integrations / "ipc.ts")]
         if "socket_path" in self.ipc_endpoint:
             native.extend(["--fore-rsi-ipc-socket", self.ipc_endpoint["socket_path"]])
         else:

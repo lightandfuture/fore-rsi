@@ -33,8 +33,9 @@ class BaseWorkflow(ABC):
         self.agent_scheduler = AgentScheduler(
             role_classes=self.agent_roles,
         )
-        # Workflow owns global Agent naming; Scheduler owns active reservations.
+        # Workflow owns global Agent and Workgroup naming; Scheduler owns active reservations.
         self.agent_name_counters: dict[str, int] = {}
+        self.workgroup_sequence = 0
         self.workgroups: dict[str, Workgroup] = {}
         self.global_workgroup = self.create_workgroup(WorkflowConfig.GLOBAL_WORKGROUP_NAME)
 
@@ -43,8 +44,11 @@ class BaseWorkflow(ABC):
         """Execute within the prepared terminal workspace, propagating errors and cancellation."""
         ...
 
-    def create_workgroup(self, workgroup_name: str) -> Workgroup:
-        """Create an empty Workgroup for later Scheduler-owned Agent creation."""
+    def create_workgroup(self, workgroup_name: str | None = None) -> Workgroup:
+        """Create an empty Workgroup with an explicit or workflow-assigned name."""
+        if workgroup_name is None:
+            self.workgroup_sequence += 1
+            workgroup_name = f"workgroup-{self.workgroup_sequence}"
         if workgroup_name in self.workgroups:
             raise ValueError(
                 f"Workgroup {workgroup_name!r} already exists in this workflow."
@@ -59,16 +63,12 @@ class BaseWorkflow(ABC):
         *,
         agent_class: type[BaseAgent],
         agent_config: AgentConfig,
+        workgroup_name: str | None = None,
         agent_name: str | None = None,
         priority: SchedulingPriority = SchedulingPriority.LOW,
-    ) -> dict[str, str]:
+    ) -> dict[str, object]:
         """Request Scheduler-owned creation of one Agent from workflow context."""
-        workgroup_name = str(
-            workflow_state.get("workgroup_name") or WorkflowConfig.GLOBAL_WORKGROUP_NAME
-        )
-        workgroup = self.workgroups.get(workgroup_name)
-        if workgroup is None:
-            workgroup = self.create_workgroup(workgroup_name)
+        workgroup_name = workgroup_name or workflow_state.get("workgroup_name")
         if agent_name is None:
             agent_name = str(
                 workflow_state.get("agent_name")
@@ -78,7 +78,7 @@ class BaseWorkflow(ABC):
         return await self.agent_scheduler.create_agent(
             agent_class=agent_class,
             agent_name=agent_name,
-            workgroup=workgroup,
+            workgroup_name=workgroup_name,
             agent_config=agent_config,
             workflow=self,
             workspace_id=str(workflow_state["workspace_id"]),

@@ -15,8 +15,6 @@ from pydantic import BaseModel, NonNegativeInt
 from fore_rsi.config import AgentConfig, ReasoningEffort
 from fore_rsi.rsi_workflows.base_agent import AgentState, BaseAgent
 from fore_rsi.rsi_workflows.types import RequiredText
-from fore_rsi.rsi_workflows.workgroup import Workgroup
-
 if TYPE_CHECKING:
     from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 
@@ -43,7 +41,7 @@ class AgentCreationRequest:
 
     agent_class: type[BaseAgent]
     agent_name: str
-    workgroup: Workgroup
+    workgroup_name: str | None
     agent_config: AgentConfig
     workflow: "BaseWorkflow"
     workspace_id: str
@@ -127,7 +125,7 @@ class AgentScheduler:
         *,
         agent_class: type[BaseAgent],
         agent_name: str,
-        workgroup: Workgroup,
+        workgroup_name: str | None,
         agent_config: AgentConfig,
         workflow: "BaseWorkflow",
         workspace_id: str,
@@ -143,7 +141,7 @@ class AgentScheduler:
         creation_request = AgentCreationRequest(
             agent_class=agent_class,
             agent_name=agent_name,
-            workgroup=workgroup,
+            workgroup_name=workgroup_name,
             agent_config=agent_config,
             workflow=workflow,
             workspace_id=workspace_id,
@@ -164,13 +162,24 @@ class AgentScheduler:
                 )
                 self.priority_queues[priority].remove(creation_request)
                 # The slot is reserved before constructing and registering the Agent.
+                workgroup = (
+                    creation_request.workflow.workgroups.get(
+                        creation_request.workgroup_name
+                    )
+                    if creation_request.workgroup_name is not None
+                    else None
+                )
+                if workgroup is None:
+                    workgroup = creation_request.workflow.create_workgroup(
+                        creation_request.workgroup_name
+                    )
                 agent = creation_request.agent_class(
                     creation_request.agent_name,
-                    creation_request.workgroup,
+                    workgroup,
                     creation_request.agent_config,
                     workflow=creation_request.workflow,
                 )
-                creation_request.workgroup.agents[creation_request.agent_name] = agent
+                workgroup.agents[creation_request.agent_name] = agent
                 self.active_agents[agent] = creation_request.quota_key
                 agent.state = AgentState.RUNNING
         except asyncio.CancelledError:
@@ -186,15 +195,16 @@ class AgentScheduler:
             )
         except BaseException:
             self.active_agents.pop(agent, None)
-            creation_request.workgroup.agents.pop(creation_request.agent_name, None)
+            agent.workgroup.agents.pop(creation_request.agent_name, None)
             agent.state = AgentState.FAILED
             async with self.scheduler_condition:
                 self.scheduler_condition.notify_all()
             raise
 
         return {
+            "agent": agent,
             "agent_name": creation_request.agent_name,
-            "workgroup_name": creation_request.workgroup.workgroup_name,
+            "workgroup_name": agent.workgroup.workgroup_name,
         }
 
     async def cancel_agent_creation(

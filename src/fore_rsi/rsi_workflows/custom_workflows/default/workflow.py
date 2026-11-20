@@ -20,6 +20,9 @@ from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.explorer import (
     ExplorerAgent,
 )
+from fore_rsi.rsi_workflows.custom_workflows.default.agents.explorer.workflow import (
+    study_initial_context,
+)
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.verifier import (
     VerifierAgent,
 )
@@ -52,11 +55,199 @@ class DefaultWorkflow(BaseWorkflow):
         self.default_agent_config = AgentConfig(harness=config.harness_or_default)
         self.task_submission_queue: asyncio.Queue[TaskSubmission] = asyncio.Queue()
 
+    async def run(self, workspace_id: str) -> None:
+        """Compile and run the outer workflow, then close its global Agents."""
+        try:
+            # Restore persisted role quotas before the workflow can request Agents.
+            current_task_revision = self.task.current_task
+            if current_task_revision is not None:
+                await self.agent_scheduler.set_role_quotas(
+                    current_task_revision.task_submission.agent_team.roles
+                )
+            workflow = self.build_workflow().compile(checkpointer=InMemorySaver())
+            workflow_config = {"configurable": {"thread_id": self.session_directory.name}}
+            await workflow.ainvoke(
+                {
+                    "workspace_id": workspace_id,
+                    "startup_task_file": str(self.config.task)
+                    if self.config.task is not None
+                    else None,
+                },
+                workflow_config,
+            )
+        finally:
+            for agent_name in tuple(self.global_workgroup.agents):
+                await self.close_agent(WorkflowConfig.GLOBAL_WORKGROUP_NAME, agent_name)
+
+    def build_workflow(self) -> StateGraph:
+        """Declare the outer task, work-area, and Watchdog workflow topology."""
+        graph = StateGraph(dict)
+        coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
+        graph.add_node(
+            coordinator_node_name,
+            partial(
+                self.request_agent_creation,
+                agent_class=CoordinatorAgent,
+                agent_config=self.default_agent_config,
+                workgroup_name=WorkflowConfig.GLOBAL_WORKGROUP_NAME,
+            ),
+        )
+
+        graph.add_node("wait_for_task_submission", self.wait_for_task_submission)
+        graph.add_node("publish_task", self.task.publish_task)
+        graph.add_node(
+            "update_agent_scheduler",
+            self.agent_scheduler.update_agent_scheduler,
+        )
+        graph.add_node(
+            "initialize_first_task",
+            self.build_initial_task_workflow().compile(),
+        )
+        graph.add_node("apply_existing_task_update", lambda workflow_state: {})
+        graph.add_node("route_workflow_stage", lambda workflow_state: {})
+        graph.add_node(
+            "run_exploration_area",
+            self.build_exploration_workflow().compile(),
+        )
+        graph.add_node("run_work_area", self.build_work_workflow().compile())
+        graph.add_node(
+            "run_experiment_area",
+            self.build_experiment_workflow().compile(),
+        )
+        graph.add_node(
+            "run_watchdog_area",
+            self.build_watchdog_workflow().compile(),
+        )
+        graph.add_node("parse_task", CoordinatorAgent.parse_task)
+
+        graph.add_edge(START, coordinator_node_name)
+        # create_coordinator
+        # ├── startup task file    -> parse_task -> wait_for_task_submission
+        # └── no startup task file -> wait_for_task_submission
+        graph.add_conditional_edges(
+            coordinator_node_name,
+            lambda workflow_state: "have_task"
+            if self.config.task is not None
+            else "await_user_input",
+            {
+                "have_task": "parse_task",
+                "await_user_input": "wait_for_task_submission",
+            },
+        )
+        graph.add_edge("parse_task", "wait_for_task_submission")
+
+        # Task intake: save the declaration, apply quotas, then split first setup from later updates.
+        graph.add_edge("wait_for_task_submission", "publish_task")
+        graph.add_edge("publish_task", "update_agent_scheduler")
+        graph.add_conditional_edges(
+            "update_agent_scheduler",
+            lambda workflow_state: (
+                "first_task"
+                if workflow_state.get("is_first_task_submission", False)
+                else "existing_task"
+            ),
+            {
+                "first_task": "initialize_first_task",
+                "existing_task": "apply_existing_task_update",
+            },
+        )
+        graph.add_edge("initialize_first_task", "route_workflow_stage")
+        graph.add_edge("apply_existing_task_update", "route_workflow_stage")
+
+        # Work-area router: implementations will select the next area from workflow state.
+        graph.add_conditional_edges(
+            "route_workflow_stage",
+            lambda workflow_state: workflow_state.get(
+                "next_workflow_stage", "wait_for_task_submission"
+            ),
+            {
+                "exploration": "run_exploration_area",
+                "work": "run_work_area",
+                "experiment": "run_experiment_area",
+                "watchdog": "run_watchdog_area",
+                "wait_for_task_submission": "wait_for_task_submission",
+            },
+        )
+        graph.add_edge("run_exploration_area", "route_workflow_stage")
+        graph.add_edge("run_work_area", "route_workflow_stage")
+        graph.add_edge("run_experiment_area", "route_workflow_stage")
+        graph.add_edge("run_watchdog_area", "route_workflow_stage")
+        return graph
+
+    def build_initial_task_workflow(self) -> StateGraph:
+        """Declare parallel first-time Explorer and Verifier initialization."""
+        workflow = StateGraph(dict)
+        for node_name in (
+            "define_initial_baseline",
+            "define_baseline_experiment",
+            "register_baseline_candidate",
+            "fork_additional_explorers",
+            "create_initial_verifier",
+            "study_verifier_context",
+            "prepare_verifier_resources",
+            "fork_verifier_pool",
+            "confirm_verifier_context",
+            "sleep_verifier",
+            "initial_task_ready",
+        ):
+            workflow.add_node(node_name, lambda workflow_state: {})
+        workflow.add_node(
+            "create_initial_explorer",
+            partial(
+                self.request_agent_creation,
+                agent_class=ExplorerAgent,
+                agent_config=self.default_agent_config,
+            ),
+        )
+        workflow.add_node(
+            "study_initial_context",
+            ExplorerAgent.study_initial_context,
+        )
+
+        # START
+        # ├── create_initial_explorer -> study_initial_context -> define_initial_baseline
+        # │   -> define_baseline_experiment -> register_baseline_candidate
+        # │   -> fork_additional_explorers
+        # └── create_initial_verifier -> study_verifier_context -> prepare_verifier_resources
+        #     -> fork_verifier_pool -> confirm_verifier_context -> sleep_verifier
+        workflow.add_edge(START, "create_initial_explorer")
+        workflow.add_edge(START, "create_initial_verifier")
+
+        # Initial Explorer path: create normally, then establish the baseline before forking more Explorers.
+        workflow.add_edge("create_initial_explorer", "study_initial_context")
+        workflow.add_edge("study_initial_context", "define_initial_baseline")
+        workflow.add_edge(
+            "define_initial_baseline", "define_baseline_experiment"
+        )
+        workflow.add_edge(
+            "define_baseline_experiment", "register_baseline_candidate"
+        )
+        workflow.add_edge(
+            "register_baseline_candidate", "fork_additional_explorers"
+        )
+        workflow.add_edge("fork_additional_explorers", "initial_task_ready")
+
+        # Initial Verifier path runs in parallel with the initial Explorer path.
+        workflow.add_edge("create_initial_verifier", "study_verifier_context")
+        workflow.add_edge(
+            "study_verifier_context", "prepare_verifier_resources"
+        )
+        workflow.add_edge(
+            "prepare_verifier_resources", "fork_verifier_pool"
+        )
+        workflow.add_edge(
+            "fork_verifier_pool", "confirm_verifier_context"
+        )
+        workflow.add_edge("confirm_verifier_context", "sleep_verifier")
+        # fork_additional_explorers and sleep_verifier -> initial_task_ready
+        workflow.add_edge("sleep_verifier", "initial_task_ready")
+        workflow.add_edge("initial_task_ready", END)
+        return workflow
+
     def build_exploration_workflow(self) -> StateGraph:
         """Declare the exploration area from direction discovery to proposal handoff."""
         workflow = StateGraph(dict)
         for node_name in (
-            "create_explorer",
             "explore_direction",
             "create_checker",
             "check_exploration",
@@ -68,8 +259,7 @@ class DefaultWorkflow(BaseWorkflow):
         ):
             workflow.add_node(node_name, lambda workflow_state: {})
 
-        workflow.add_edge(START, "create_explorer")
-        workflow.add_edge("create_explorer", "explore_direction")
+        workflow.add_edge(START, "explore_direction")
         workflow.add_edge("explore_direction", "create_checker")
         workflow.add_edge("create_checker", "check_exploration")
         workflow.add_conditional_edges(
@@ -196,113 +386,6 @@ class DefaultWorkflow(BaseWorkflow):
         workflow.add_edge("publish_watchdog_report", END)
         return workflow
 
-    def build_workflow(self) -> StateGraph:
-        """Declare the outer task, work-area, and Watchdog workflow topology."""
-        graph = StateGraph(dict)
-        coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
-        graph.add_node(
-            coordinator_node_name,
-            partial(
-                self.request_agent_creation,
-                agent_class=CoordinatorAgent,
-                agent_config=self.default_agent_config,
-            ),
-        )
-
-        graph.add_node("wait_for_task_submission", self.wait_for_task_submission)
-        graph.add_node("publish_task", self.task.publish_task)
-        graph.add_node(
-            "update_agent_scheduler",
-            self.agent_scheduler.update_agent_scheduler,
-        )
-        graph.add_node("initialize_first_task", lambda workflow_state: {})
-        graph.add_node("apply_existing_task_update", lambda workflow_state: {})
-        graph.add_node("route_workflow_stage", lambda workflow_state: {})
-        graph.add_node(
-            "run_exploration_area",
-            self.build_exploration_workflow().compile(),
-        )
-        graph.add_node("run_work_area", self.build_work_workflow().compile())
-        graph.add_node(
-            "run_experiment_area",
-            self.build_experiment_workflow().compile(),
-        )
-        graph.add_node(
-            "run_watchdog_area",
-            self.build_watchdog_workflow().compile(),
-        )
-        graph.add_node("send_message", self.send_message)
-
-        graph.add_edge(START, coordinator_node_name)
-        # create_coordinator
-        # ├── startup task file    -> send_message -> wait_for_task_submission
-        # └── no startup task file -> wait_for_task_submission
-        graph.add_conditional_edges(
-            coordinator_node_name,
-            lambda workflow_state: "have_task"
-            if self.config.task is not None
-            else "await_user_input",
-            {
-                "have_task": "send_message",
-                "await_user_input": "wait_for_task_submission",
-            },
-        )
-        graph.add_edge("send_message", "wait_for_task_submission")
-
-        # Task intake: save the declaration, apply quotas, then split first setup from later updates.
-        graph.add_edge("wait_for_task_submission", "publish_task")
-        graph.add_edge("publish_task", "update_agent_scheduler")
-        graph.add_conditional_edges(
-            "update_agent_scheduler",
-            lambda workflow_state: (
-                "first_task"
-                if workflow_state.get("is_first_task_submission", False)
-                else "existing_task"
-            ),
-            {
-                "first_task": "initialize_first_task",
-                "existing_task": "apply_existing_task_update",
-            },
-        )
-        graph.add_edge("initialize_first_task", "route_workflow_stage")
-        graph.add_edge("apply_existing_task_update", "route_workflow_stage")
-
-        # Work-area router: implementations will select the next area from workflow state.
-        graph.add_conditional_edges(
-            "route_workflow_stage",
-            lambda workflow_state: workflow_state.get(
-                "next_workflow_stage", "wait_for_task_submission"
-            ),
-            {
-                "exploration": "run_exploration_area",
-                "work": "run_work_area",
-                "experiment": "run_experiment_area",
-                "watchdog": "run_watchdog_area",
-                "wait_for_task_submission": "wait_for_task_submission",
-            },
-        )
-        graph.add_edge("run_exploration_area", "route_workflow_stage")
-        graph.add_edge("run_work_area", "route_workflow_stage")
-        graph.add_edge("run_experiment_area", "route_workflow_stage")
-        graph.add_edge("run_watchdog_area", "route_workflow_stage")
-        return graph
-
-    async def run(self, workspace_id: str) -> None:
-        """Compile and run the workflow graph, then close its Agents during shutdown."""
-        try:
-            # Restore persisted role quotas before the graph can request Agents.
-            current_task_revision = self.task.current_task
-            if current_task_revision is not None:
-                await self.agent_scheduler.set_role_quotas(
-                    current_task_revision.task_submission.agent_team.roles
-                )
-            workflow = self.build_workflow().compile(checkpointer=InMemorySaver())
-            workflow_config = {"configurable": {"thread_id": self.session_directory.name}}
-            await workflow.ainvoke({"workspace_id": workspace_id}, workflow_config)
-        finally:
-            for agent_name in tuple(self.global_workgroup.agents):
-                await self.close_agent(WorkflowConfig.GLOBAL_WORKGROUP_NAME, agent_name)
-
     async def wait_for_task_submission(
         self, workflow_state: Mapping[str, object]
     ) -> dict[str, object]:
@@ -313,12 +396,12 @@ class DefaultWorkflow(BaseWorkflow):
         """Queue a Coordinator task submission for the next workflow boundary."""
         await self.task_submission_queue.put(task_submission)
 
-    async def send_message(self, workflow_state: Mapping[str, object]) -> dict:
-        """Send one workflow message to the current Agent using its delivery policy."""
-        registered_agent = self.workgroups[workflow_state["workgroup_name"]].agents[
+    async def study_initial_context(
+        self, workflow_state: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Run ExplorerAgent's initial context study stage for the graph node."""
+        explorer = self.workgroups[workflow_state["workgroup_name"]].agents[
             workflow_state["agent_name"]
         ]
-        await registered_agent.send_message(
-            f"Read the following file for the user's task requirements:\n{self.config.task}"
-        )
+        await explorer.study_initial_context(workflow_state)
         return {}

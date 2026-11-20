@@ -27,7 +27,15 @@ def resolve_project_path(path: Path) -> Path:
 def write_private_text(path: Path, text: str) -> None:
     """Publish a complete owner-readable file even when a native process is already reading it."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete_on_close=False) as temporary:
-        temporary.write(text)
-        temporary.close()
-        Path(temporary.name).replace(path)
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete_on_close=False
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(text)
+            temporary.close()
+            temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)

@@ -235,13 +235,15 @@ class WorkflowRunner:
         }
         # Publish only after the temporary file is closed, so readers see a
         # complete snapshot and Windows can replace the destination.
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=session_dir, delete=False
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            json.dump(record, temporary, indent=2)
-            temporary.write("\n")
+        temporary_path: Path | None = None
         try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=session_dir, delete=False
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                json.dump(record, temporary, indent=2)
+                temporary.write("\n")
             temporary_path.replace(record_path)
         finally:
-            temporary_path.unlink(missing_ok=True)
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)

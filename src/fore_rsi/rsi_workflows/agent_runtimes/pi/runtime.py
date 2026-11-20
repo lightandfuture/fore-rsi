@@ -10,7 +10,6 @@ import socket
 from collections.abc import Sequence
 from pathlib import Path
 from typing import NotRequired, TypedDict
-from uuid import uuid4
 
 import httpx2
 
@@ -68,7 +67,7 @@ class PiAgentRuntime(AgentRuntime):
                 listener.bind(("127.0.0.1", 0))
                 endpoint["port"] = listener.getsockname()[1]
         else:
-            endpoint["socket_path"] = f"/tmp/fore-rsi-{uuid4().hex}.sock"
+            endpoint["socket_path"] = str(self.get_agent_file_path(".ipc.sock"))
         return endpoint
 
     @classmethod

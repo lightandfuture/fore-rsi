@@ -3,27 +3,17 @@
 
 """Publish an agent's bound tools through the shared MCP implementation."""
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable, Sequence
 
 from mcp.server import MCPServer
 
-if TYPE_CHECKING:
-    from fore_rsi.rsi_workflows.agent_runtimes.base import AgentTool
+
+type AgentTool = Callable[..., Awaitable[dict[str, object]]]
 
 
-def create_tool_mcp(tools: Sequence["AgentTool"]) -> MCPServer:
-    """Build a runtime's MCP tool service without opening a transport.
-
-    Explicitly registered handlers define the public tool arguments and results.
-    The runtime owns the service's eventual transport and shutdown.
-    """
+def create_tool_mcp(tools: Sequence[AgentTool]) -> MCPServer:
+    """Register the role's selected callables; MCP derives each tool's name, description and schema."""
     server = MCPServer("fore-rsi")
     for tool in tools:
-        server.add_tool(
-            tool.handler,
-            name=tool.name,
-            description=tool.description,
-            structured_output=True,
-        )
+        server.add_tool(tool, structured_output=True)
     return server

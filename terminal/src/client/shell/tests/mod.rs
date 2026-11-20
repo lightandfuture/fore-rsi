@@ -9,6 +9,7 @@ mod text_editing;
 
 pub(super) fn snapshot() -> ClientShellSnapshot {
     ClientShellSnapshot {
+        protected_close_targets: Default::default(),
         boot_id: "boot-1".into(),
         revision: 1,
         config_diagnostic: None,
@@ -178,6 +179,7 @@ fn pane_scroll_result(
 ) -> crate::api::schema::ResponseResult {
     crate::api::schema::ResponseResult::PaneInfo {
         pane: crate::api::schema::PaneInfo {
+            managed_key: None,
             pane_id: "pane_1".into(),
             terminal_id: "terminal_1".into(),
             workspace_id: "ws_1".into(),

@@ -49,15 +49,15 @@ uv tool install --python 3.13 -e .
 
 The editable installation uses the local Python source directly. No virtual environment activation is needed.
 
-Or use pip in a project virtual environment:
+Or use pip in a virtual environment. On macOS, keep the environment outside protected folders such as Desktop so the background terminal can start. The checkout can stay where it is.
 
 ```bash
-python3.13 -m venv .venv
-source .venv/bin/activate
+python3.13 -m venv "$HOME/.venvs/fore-rsi"
+source "$HOME/.venvs/fore-rsi/bin/activate"
 pip install -e .
 ```
 
-For the pip installation, activate that environment before running `fore-rsi`.
+Activate that environment before running `fore-rsi`.
 
 </details>
 
@@ -111,14 +111,10 @@ export NO_PROXY=localhost,127.0.0.1,::1
 
 ### Choose a workflow and start
 
-A workflow defines team roles, collaboration, and execution steps. The built-in `default` workflow covers exploration, execution, and verification for general tasks; `inference` focuses on inference performance optimization and evaluation. Omitting `--workflow` selects `default`.
-
-Start in the project directory you want to work with. The `run` command is optional: `fore-rsi` and `fore-rsi run` are equivalent. This example selects the `inference` workflow, uses Pi to run agents with `--harness pi`, and names the session `sglang-throughput` with `--session`:
+Start in the project directory you want to work with. The built-in `default` workflow opens a native Pi conversation with the Coordinator. Give the session a name so you can return to it later:
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput
+fore-rsi --session sglang-throughput
 ```
 
 ForeRSI reuses an installed CLI or runs the selected backend's official installer when needed. Follow any installer prompts to prepare dependencies; sign in through the native tool when authentication is required.
@@ -138,9 +134,7 @@ In the conversation, tell the Coordinator your objective, constraints, available
 If you already have a task file, provide it when starting. For example, run the [SGLang throughput task](tasks/inference-optimization/sglang-throughput.md) from the ForeRSI repository root:
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput \
+fore-rsi --session sglang-throughput \
   --task tasks/inference-optimization/sglang-throughput.md
 ```
 

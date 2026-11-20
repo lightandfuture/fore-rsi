@@ -91,6 +91,7 @@ fn start_request(pane_id: &str, argument: &str) -> Request {
             name: "worker".into(),
             kind: "codex".into(),
             pane_id: pane_id.into(),
+            managed_executable: None,
             args: vec!["resume".into(), argument.into()],
             timeout_ms: Some(10_000),
         }),

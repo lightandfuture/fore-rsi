@@ -4926,7 +4926,7 @@ fn failed_startup_git_refresh_retries_without_clients() {
 
     // Once the retry starts, clientless servers stop polling again.
     server.app.git_refresh_in_flight = false;
-    server.app.request_git_identity_refresh(retry_at);
+    server.app.mark_git_status_refresh_due(retry_at);
     server.handle_scheduled_tasks_headless(retry_at, false);
     assert!(!server.app.git_refresh_in_flight);
 }

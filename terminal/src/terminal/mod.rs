@@ -5,6 +5,8 @@ mod runtime_registry;
 pub mod state;
 mod title;
 
+pub(crate) const WORK_PROGRESS_PANE_KEY: &str = "fore-rsi.work-progress";
+
 pub(crate) use history_read::{merge_scrolled_up, snapshot_text, ScreenSnapshot, UpwardMerge};
 pub use id::TerminalId;
 pub use runtime::TerminalRuntime;

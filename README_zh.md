@@ -49,15 +49,15 @@ uv tool install --python 3.13 -e .
 
 可编辑安装直接引用本地 Python 源码，无需激活虚拟环境。
 
-也可以在项目虚拟环境中使用 pip：
+也可以用 pip 安装到虚拟环境。macOS 的后台终端需要从虚拟环境启动，因此请把环境放在桌面等受保护目录之外；源码仓库不需要移动。
 
 ```bash
-python3.13 -m venv .venv
-source .venv/bin/activate
+python3.13 -m venv "$HOME/.venvs/fore-rsi"
+source "$HOME/.venvs/fore-rsi/bin/activate"
 pip install -e .
 ```
 
-使用 pip 安装时，运行 `fore-rsi` 前需激活该环境。
+运行 `fore-rsi` 前，先激活这个环境。
 
 </details>
 
@@ -111,14 +111,10 @@ export NO_PROXY=localhost,127.0.0.1,::1
 
 ### 选择工作流并启动
 
-工作流定义团队角色、协作方式与执行步骤。内置的 `default` 用于通用任务的探索、执行与验证，`inference` 用于推理系统的性能优化与评测。省略 `--workflow` 时使用 `default`。
-
-在希望处理的项目目录中启动。`fore-rsi` 默认执行 `run`，也可以写成 `fore-rsi run`。下面选择 `inference` 工作流，通过 `--harness pi` 使用 Pi 执行 Agent，并通过 `--session` 将会话命名为 `sglang-throughput`：
+在希望处理的项目目录中启动。内置的 `default` 工作流会打开协调者的原生 Pi 对话。给会话起一个名字，之后就可以按名称恢复：
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput
+fore-rsi --session sglang-throughput
 ```
 
 ForeRSI 优先复用已安装的 CLI，缺失时调用所选后端的官方安装器。按安装器提示准备依赖；需要认证时，使用原生工具的登录流程。
@@ -138,9 +134,7 @@ ForeRSI 优先复用已安装的 CLI，缺失时调用所选后端的官方安�
 如果已经写好任务文件，可以在启动时一并提供。例如，在 ForeRSI 仓库根目录运行 [SGLang 吞吐优化任务](tasks/inference-optimization/sglang-throughput.md)：
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput \
+fore-rsi --session sglang-throughput \
   --task tasks/inference-optimization/sglang-throughput.md
 ```
 

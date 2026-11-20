@@ -3,11 +3,16 @@
 
 """Common role interface for workflow agents backed by native harnesses."""
 
+from collections.abc import Sequence
 from enum import StrEnum
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
+from fore_rsi.config import AgentConfig
+from fore_rsi.rsi_workflows.agent_runtimes import AgentTool, create_agent_runtime
 from fore_rsi.rsi_workflows.workgroup import Workgroup
+
+if TYPE_CHECKING:
+    from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 
 
 class AgentState(StrEnum):
@@ -32,14 +37,25 @@ class BaseAgent:
         self,
         agent_name: str,
         workgroup: Workgroup,
-        agent_runtime: AgentRuntime,
+        agent_config: AgentConfig,
+        *,
+        workflow: "BaseWorkflow",
+        tools: Sequence[AgentTool] = (),
     ) -> None:
-        """Bind the instance identity, workgroup, and agent runtime without starting execution."""
+        """Create the member's unstarted runtime with the tools selected by its role."""
         self.agent_name = agent_name
         self.workgroup = workgroup
-        self.agent_runtime = agent_runtime
         self.system_prompt: str | None = None
         self.state = AgentState.READY
+        self.agent_runtime = create_agent_runtime(
+            agent_config, workflow.session_directory,
+            workgroup_name=workgroup.workgroup_name, agent_name=agent_name,
+            tool_mcp_host=workflow.tool_mcp_host, tools=tools,
+        )
+
+    async def send_message(self, message: str) -> None:
+        """Send one workflow message through this Agent's native runtime."""
+        await self.agent_runtime.send_message(message)
 
     def get_full_name(self) -> str:
         """Return the agent's workgroup-qualified name within its workflow."""

@@ -19,7 +19,6 @@ mod aggregate;
 mod git;
 mod tab;
 
-use self::git::git_status_cache_key_for_space;
 pub(crate) use self::{git::git_status_snapshot_for_cwd_with_demand, tab::MovedPane};
 pub use self::{
     git::{
@@ -56,21 +55,6 @@ pub struct WorkspaceGitStatusSnapshot {
     pub branch: Option<String>,
     pub ahead_behind: Option<(usize, usize)>,
     pub space: Option<GitSpaceMetadata>,
-}
-
-pub(crate) fn discover_workspace_git_identity(
-    cwd: &std::path::Path,
-) -> (Option<GitSpaceMetadata>, String, PathBuf) {
-    let space = git_space_metadata(cwd);
-    let auto_label = space
-        .as_ref()
-        .map(|space| self::git::automatic_workspace_label(cwd, &space.repo_root))
-        .unwrap_or_else(|| fallback_label_from_cwd(cwd));
-    let status_cache_key = space
-        .as_ref()
-        .map(git_status_cache_key_for_space)
-        .unwrap_or_else(|| cwd.to_path_buf());
-    (space, auto_label, status_cache_key)
 }
 
 impl WorkspaceGitStatusSnapshot {
@@ -247,18 +231,16 @@ impl Workspace {
         let tab = Tab::from_existing_pane(1, tab_label, moved, events, render_notify, render_dirty);
         let mut public_pane_numbers = HashMap::new();
         public_pane_numbers.insert(root_pane, 1);
-        let (cached_git_space, cached_auto_label, cached_git_status_key) =
-            discover_workspace_git_identity(&identity_cwd);
         Self {
             id,
             custom_name: label,
             identity_cwd: identity_cwd.clone(),
             cached_identity_cwd: identity_cwd.clone(),
-            cached_auto_label,
-            cached_git_status_key,
-            cached_git_branch: git_branch(&identity_cwd),
+            cached_auto_label: fallback_label_from_cwd(&identity_cwd),
+            cached_git_status_key: identity_cwd,
+            cached_git_branch: None,
             cached_git_ahead_behind: None,
-            cached_git_space,
+            cached_git_space: None,
             worktree_space: None,
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
@@ -327,19 +309,17 @@ impl Workspace {
         };
         let mut public_pane_numbers = HashMap::new();
         public_pane_numbers.insert(tab.root_pane, 1);
-        let (cached_git_space, cached_auto_label, cached_git_status_key) =
-            discover_workspace_git_identity(&initial_cwd);
         Ok((
             Self {
                 id,
                 custom_name: None,
                 identity_cwd: initial_cwd.clone(),
                 cached_identity_cwd: initial_cwd.clone(),
-                cached_auto_label,
-                cached_git_status_key,
-                cached_git_branch: git_branch(&initial_cwd),
+                cached_auto_label: fallback_label_from_cwd(&initial_cwd),
+                cached_git_status_key: initial_cwd,
+                cached_git_branch: None,
                 cached_git_ahead_behind: None,
-                cached_git_space,
+                cached_git_space: None,
                 worktree_space: None,
                 metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
                 metadata_token_sequences: HashMap::new(),
@@ -1499,13 +1479,16 @@ mod tests {
         let (base, repo, checkout) =
             self::git::test_support::create_repo_with_linked_worktree("linked-auto-label");
 
-        let (space, auto_label, _) = discover_workspace_git_identity(&checkout);
-
+        let (status, _) =
+            git_status_snapshot_for_cwd_with_demand(&checkout, None, GitStatusRefreshDemand::ALL);
         assert_eq!(
-            space.unwrap().repo_name,
+            status.space.unwrap().repo_name,
             repo.file_name().unwrap().to_str().unwrap()
         );
-        assert_eq!(auto_label, checkout.file_name().unwrap().to_str().unwrap());
+        assert_eq!(
+            status.auto_label,
+            checkout.file_name().unwrap().to_str().unwrap()
+        );
 
         std::fs::remove_dir_all(base).unwrap();
     }

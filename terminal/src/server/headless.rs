@@ -937,10 +937,11 @@ impl HeadlessServer {
         self.app_client_count() > 0
     }
 
-    /// Periodic Git refresh follows attached clients. A refresh whose worker
-    /// failed to start still retries without one, so restored metadata settles.
+    /// Resolve new workspace identities without a client, but poll Git only while attached.
     fn git_refresh_scheduled(&self) -> bool {
-        self.has_app_client() || self.app.git_refresh_spawn_retry_pending
+        self.has_app_client()
+            || self.app.git_identity_refresh_requested
+            || self.app.git_refresh_spawn_retry_pending
     }
 
     fn remove_client(&mut self, client_id: u64) -> bool {

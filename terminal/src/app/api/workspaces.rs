@@ -324,6 +324,13 @@ impl App {
         } else {
             self.state.workspace_close_indices(index)
         };
+        let protected = self.protected_close_targets();
+        if close_indices
+            .iter()
+            .any(|&i| protected.contains(&self.state.workspaces[i].id))
+        {
+            return crate::app::workflow_panes::close_error(id);
+        }
         if let Err(response) = self.require_restored_group_close_ready(&id, &close_indices) {
             return response;
         }

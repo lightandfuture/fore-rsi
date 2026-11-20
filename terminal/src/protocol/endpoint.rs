@@ -224,6 +224,7 @@ mod tests {
 
     fn snapshot() -> ClientShellSnapshot {
         ClientShellSnapshot {
+            protected_close_targets: Default::default(),
             boot_id: "boot".into(),
             revision: 1,
             config_diagnostic: None,

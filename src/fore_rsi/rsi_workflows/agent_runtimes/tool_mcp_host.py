@@ -7,6 +7,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AbstractContextManager, asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
+from pathlib import Path
 from secrets import token_urlsafe
 import socket
 
@@ -15,6 +16,8 @@ from anyio.abc import TaskGroup, TaskStatus
 from mcp.server import MCPServer
 from starlette.routing import Mount, Router
 import uvicorn
+
+from fore_rsi.utils.paths import write_private_text
 
 
 @dataclass
@@ -47,8 +50,8 @@ class ToolMcpHost:
                 self._origin = None
                 tasks.cancel_scope.cancel()
 
-    async def publish(self, server: MCPServer | None) -> str | None:
-        """Return an agent's ready MCP URL for launch or reattachment, or None for an empty tool set."""
+    async def publish(self, server: MCPServer | None, *, address_file: Path | None = None) -> str | None:
+        """Publish the agent's tools and, when requested, their address for the native client's lifetime."""
         if server is None:
             return None
         async with self._lock:
@@ -62,7 +65,7 @@ class ToolMcpHost:
                     access_log=False, log_config=None,
                 )
                 self._origin = await self._tasks.start(_LoopbackServer(config).listen)
-            return await self._tasks.start(self._serve_tools, server, self._origin)
+            return await self._tasks.start(self._serve_tools, server, self._origin, address_file)
 
     async def unpublish(self, server: MCPServer | None) -> None:
         """Remove this runtime's route and wait for its MCP manager to close, leaving other agents live."""
@@ -75,7 +78,9 @@ class ToolMcpHost:
                     endpoint.stop.set()
                     await endpoint.closed.wait()
 
-    async def _serve_tools(self, server: MCPServer, origin: str, *, task_status: TaskStatus[str]) -> None:
+    async def _serve_tools(
+        self, server: MCPServer, origin: str, address_file: Path | None, *, task_status: TaskStatus[str],
+    ) -> None:
         """Own an agent's private route and SDK session manager together on the workflow event loop."""
         path = f"/{token_urlsafe(24)}"
         route = Mount(path, app=server.streamable_http_app(stateless_http=True, json_response=True))
@@ -85,11 +90,19 @@ class ToolMcpHost:
                 self._router.routes.append(route)
                 self._endpoints[server] = endpoint
                 try:
+                    if address_file is not None:
+                        write_private_text(address_file, endpoint.url)
                     task_status.started(endpoint.url)
                     await endpoint.stop.wait()
                 finally:
                     self._router.routes.remove(route)
                     del self._endpoints[server]
+                    if address_file is not None:
+                        try:
+                            if address_file.read_text(encoding="utf-8") == endpoint.url:
+                                address_file.unlink()
+                        except FileNotFoundError:
+                            pass
         finally:
             endpoint.closed.set()
 

@@ -471,6 +471,14 @@ pub(super) const LEAVES: &[Leaf] = &[
         PaneEnsure
     ),
     leaf!(
+        "remove",
+        "Remove the exact terminal previously obtained with pane ensure",
+        "cli:pane:remove",
+        Json,
+        PaneRemoveProjection,
+        PaneRemove
+    ),
+    leaf!(
         "list",
         "List panes",
         "cli:pane:list",

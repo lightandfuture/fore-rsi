@@ -8,6 +8,12 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.DS_Store
+
+# Ghostty uses these directories for build source, not build output.
+!/terminal/vendor/libghostty-vt/src/build/
+!/terminal/vendor/libghostty-vt/src/apprt/gtk/build/
+!/terminal/vendor/libghostty-vt/dist/
 
 # Local dependencies left over from the TypeScript version.
 node_modules/

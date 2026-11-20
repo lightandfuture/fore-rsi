@@ -3,11 +3,13 @@
 
 """Mount and run the work-progress interface without owning workflow execution."""
 
-from pathlib import Path
+import json
+import os
 import sys
+from pathlib import Path
 
 from fore_rsi.config import Config
-from fore_rsi.utils.terminal import ensure_terminal_pane
+from fore_rsi.utils.terminal import ensure_terminal_pane, run_terminal
 
 
 async def run_work_progress(session_directory: Path) -> None:
@@ -17,7 +19,20 @@ async def run_work_progress(session_directory: Path) -> None:
 
     from fore_rsi.ui.tui.work_progress.app import WorkProgressApp
 
-    await WorkProgressApp(session_directory).run_async()
+    embedded = False
+    if pane_id := os.environ.get("HERDR_PANE_ID"):
+        # The inherited socket and pane ID identify this terminal, not the session being viewed.
+        result = await run_terminal(["pane", "get", pane_id], capture_output=True)
+        pane = json.loads(result.stdout)["result"]["pane"]
+        embedded = pane.get("managed_key") == Config.WORK_PROGRESS_PANE_KEY
+
+    # Keep Ctrl+C as a key event even if Textual's signal opt-in was inherited.
+    allow_signals = os.environ.pop("TEXTUAL_ALLOW_SIGNALS", None) if embedded else None
+    try:
+        await WorkProgressApp(session_directory, embedded=embedded).run_async()
+    finally:
+        if allow_signals is not None:
+            os.environ["TEXTUAL_ALLOW_SIGNALS"] = allow_signals
 
 
 async def ensure_work_progress_pane(session_name: str, working_directory: Path) -> str:

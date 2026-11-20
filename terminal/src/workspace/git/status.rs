@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::workspace::{GitSpaceMetadata, WorkspaceGitStatusSnapshot};
+use crate::workspace::WorkspaceGitStatusSnapshot;
 
 use super::{
     config::{deps_current, read_config, stamp, upstream_full_ref, ConfigCtx, FileDep},
@@ -83,10 +83,6 @@ pub struct GitUpstreamIdentity {
 
 pub fn git_status_cache_key(cwd: &Path) -> Option<PathBuf> {
     git_worktree_info(cwd).map(|info| canonicalize_best_effort_path(&info.repo_root))
-}
-
-pub fn git_status_cache_key_for_space(space: &GitSpaceMetadata) -> PathBuf {
-    canonicalize_best_effort_path(&space.repo_root)
 }
 
 #[cfg(test)]
@@ -352,7 +348,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn cache_key_from_space_preserves_non_utf8_checkout_path() {
+    fn cache_key_preserves_non_utf8_checkout_path() {
         use std::os::unix::ffi::OsStringExt;
 
         let base = temp_test_dir("non-utf8-key");
@@ -360,11 +356,9 @@ mod tests {
             b'r', b'e', b'p', b'o', 0x80,
         ]));
         write_fake_tracked_repo(&root);
-        let space = git_space_metadata(&root).expect("Git metadata");
-
         assert_eq!(
-            git_status_cache_key_for_space(&space),
-            std::fs::canonicalize(&root).unwrap()
+            git_status_cache_key(&root),
+            Some(std::fs::canonicalize(&root).unwrap())
         );
 
         std::fs::remove_dir_all(base).unwrap();

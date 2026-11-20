@@ -187,6 +187,10 @@ cli_params! {
         pub name: String => Field::new(String::new()).input(bindings::text_position("name", "NAME", 0)),
         pub kind: String => Field::new(String::new()).input(bindings::kind()),
         pub pane_id: String => Field::new(String::new()).input(bindings::pane()),
+        /// In a keyed pane, launch this absolute executable and retain the complete argv for restore.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub managed_executable: Option<String> => Field::new(None).input(bindings::optional_text("managed-executable", "PATH").path()
+            .help("Use this absolute launcher in a keyed pane; reuse the same running command")),
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub args: Vec<String> => Field::new(Vec::new()).input(bindings::agent_args()),
         /// Startup timeout in milliseconds. Values must be greater than 3000 and at most 300000.

@@ -37,6 +37,15 @@ crate::cli::projection::cli_params! {
 
 crate::cli::projection::cli_params! {
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+    pub struct PaneRemoveParams => PaneRemoveProjection {
+        /// Managed key and exact terminal instance returned by pane.ensure.
+        pub key: String => Field::new(String::new()).input(binding::text("key", "KEY").required()),
+        pub terminal_id: String => Field::new(String::new()).input(binding::text("terminal-id", "ID").required()),
+    }
+}
+
+crate::cli::projection::cli_params! {
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
     pub struct PaneSplitParams => PaneSplitProjection {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub workspace_id: Option<String> => Field::new(None::<String>),
@@ -516,6 +525,9 @@ crate::cli::projection::cli_params! {
 pub struct PaneInfo {
     pub pane_id: String,
     pub terminal_id: String,
+    /// The key assigned by pane.ensure follows the terminal across moves and restores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_key: Option<String>,
     pub workspace_id: String,
     pub tab_id: String,
     pub focused: bool,

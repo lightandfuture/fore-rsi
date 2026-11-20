@@ -96,19 +96,21 @@ async def read_agent_session(
     return json.loads(result.stdout)["result"]["pane"].get("agent_session")
 
 
-def terminal_command(arguments: list[str], session: str | None = None) -> list[str]:
-    """Build a command for UI and backend callers using the executable recorded by the installer."""
+def terminal_executable() -> Path:
+    """Locate the bundled terminal; its native integration files are installed alongside it."""
     package = distribution("fore-rsi")
     for record in package.files or ():
         if record.parts[-3:] == ("libexec", "fore-rsi", Config.TERMINAL_EXECUTABLE_NAME):
-            executable = Path(package.locate_file(record))
-            break
-    else:
-        raise FileNotFoundError(
-            "The ForeRSI installation does not include its terminal executable. Reinstall ForeRSI."
-        )
+            installed = Path(package.locate_file(record))
+            return installed.parent.resolve() / installed.name
+    raise FileNotFoundError(
+        "The ForeRSI installation does not include its terminal executable. Reinstall ForeRSI."
+    )
 
-    command = [str(executable)]
+
+def terminal_command(arguments: list[str], session: str | None = None) -> list[str]:
+    """Build a command addressing the selected native terminal session."""
+    command = [str(terminal_executable())]
     if session is not None:
         command.extend(["--session", session])
     command.extend(arguments)

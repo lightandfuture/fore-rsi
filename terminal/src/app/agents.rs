@@ -162,13 +162,6 @@ impl App {
         }
         let persisted_agent_session =
             crate::agent_resume::persisted_session_from_launch_args(kind, &params.args);
-        let conflicts = self.agent_name_conflicts(&name, "");
-        if !conflicts.is_empty() {
-            return Err(AgentStartError::DuplicateName {
-                name,
-                candidates: conflicts,
-            });
-        }
         let Some((ws_idx, pane_id)) = self.parse_current_public_pane_id(&params.pane_id) else {
             return Err(AgentStartError::TargetNotFound(params.pane_id));
         };
@@ -184,21 +177,63 @@ impl App {
             .terminals
             .get(&terminal_id)
             .ok_or_else(|| AgentStartError::TargetNotFound(params.pane_id.clone()))?;
-        if terminal.is_agent_terminal() || terminal.managed_agent_kind().is_some() {
-            return Err(AgentStartError::TargetBusy(params.pane_id));
+        let managed = params.managed_executable.is_some();
+        let executable = match params.managed_executable {
+            Some(path)
+                if terminal.managed_key.is_some()
+                    && std::path::Path::new(&path).is_absolute()
+                    && !path.chars().any(char::is_control) =>
+            {
+                path
+            }
+            Some(_) => return Err(AgentStartError::InvalidManagedExecutable),
+            None => crate::detect::interactive_agent_executable(kind).to_owned(),
+        };
+        let mut argv = vec![executable];
+        argv.extend(params.args);
+        let same_command = managed && terminal.launch_argv.as_ref() == Some(&argv);
+        let conflicts = self.agent_name_conflicts(
+            &name,
+            if same_command {
+                terminal_id.as_str()
+            } else {
+                ""
+            },
+        );
+        if !conflicts.is_empty() {
+            return Err(AgentStartError::DuplicateName {
+                name,
+                candidates: conflicts,
+            });
         }
         let runtime = self
             .terminal_runtimes
             .get(&terminal_id)
             .ok_or_else(|| AgentStartError::TargetUnavailable(params.pane_id.clone()))?;
-        let shell_name = available_shell_name(runtime)
-            .ok_or_else(|| AgentStartError::TargetBusy(params.pane_id.clone()))?;
-
-        let mut argv = vec![crate::detect::interactive_agent_executable(kind).to_string()];
-        argv.extend(params.args);
-        let command = crate::platform::interactive_shell_command(&argv, &shell_name)
-            .ok_or(AgentStartError::InvalidArgument)?;
-        let bytes = crate::app::api_helpers::encode_api_submission(runtime, &command);
+        let shell = available_shell_name(runtime);
+        // A restored keyed command already owns its PTY. Adopt it through the normal
+        // readiness check; never type the launch command into the running agent.
+        let attaching =
+            same_command && (shell.is_none() || terminal.managed_agent_launch_pending());
+        let submission = if attaching {
+            if terminal
+                .effective_agent_label()
+                .is_some_and(|label| crate::detect::parse_agent_label(label) != Some(kind))
+            {
+                return Err(AgentStartError::TargetBusy(params.pane_id));
+            }
+            None
+        } else {
+            if terminal.is_agent_terminal() || terminal.managed_agent_kind().is_some() {
+                return Err(AgentStartError::TargetBusy(params.pane_id));
+            }
+            let shell = shell.ok_or_else(|| AgentStartError::TargetBusy(params.pane_id.clone()))?;
+            let command = crate::platform::interactive_shell_command(&argv, &shell)
+                .ok_or(AgentStartError::InvalidArgument)?;
+            Some(crate::app::api_helpers::encode_api_submission(
+                runtime, &command,
+            ))
+        };
         let timeout = Duration::from_millis(
             params
                 .timeout_ms
@@ -207,10 +242,21 @@ impl App {
         if timeout <= AGENT_START_SETTLE_DELAY || timeout > MAX_AGENT_START_TIMEOUT {
             return Err(AgentStartError::InvalidTimeout);
         }
-
-        runtime
-            .validate_input_submission(&bytes)
-            .map_err(|err| AgentStartError::InputFailed(err.to_string()))?;
+        if attaching
+            && terminal.agent_name.as_deref() == Some(&name)
+            && terminal.managed_agent_kind() == Some(kind)
+        {
+            return Ok((
+                self.agent_info(ws_idx, pane_id)
+                    .expect("managed agent has metadata"),
+                argv,
+            ));
+        }
+        if let Some(bytes) = &submission {
+            runtime
+                .validate_input_submission(bytes)
+                .map_err(|err| AgentStartError::InputFailed(err.to_string()))?;
+        }
 
         let now = Instant::now();
         let terminal = self
@@ -219,9 +265,14 @@ impl App {
             .get_mut(&terminal_id)
             .ok_or_else(|| AgentStartError::TargetUnavailable(params.pane_id.clone()))?;
         terminal.begin_managed_agent(name.clone(), kind, now, AGENT_START_SETTLE_DELAY, timeout);
-        if let Err(err) = runtime.try_send_bytes(Bytes::from(bytes)) {
-            terminal.clear_agent_name();
-            return Err(AgentStartError::InputFailed(err.to_string()));
+        if let Some(bytes) = submission {
+            if let Err(err) = runtime.try_send_bytes(Bytes::from(bytes)) {
+                terminal.clear_agent_name();
+                return Err(AgentStartError::InputFailed(err.to_string()));
+            }
+        }
+        if managed {
+            terminal.launch_argv = Some(argv.clone());
         }
         if let Some(session) = persisted_agent_session {
             terminal.set_managed_agent_launch_session(session);
@@ -247,6 +298,10 @@ impl App {
             AgentStartError::UnsupportedKind(kind) => crate::api::schema::ErrorBody {
                 code: "unsupported_agent_kind".into(),
                 message: format!("unsupported interactive agent kind {kind}"),
+            },
+            AgentStartError::InvalidManagedExecutable => crate::api::schema::ErrorBody {
+                code: "invalid_managed_executable".into(),
+                message: "a managed executable requires an absolute launcher path and a keyed pane".into(),
             },
             AgentStartError::InvalidArgument => crate::api::schema::ErrorBody {
                 code: "invalid_agent_argument".into(),
@@ -457,6 +512,7 @@ fn live_runtime_agent(runtime: &crate::terminal::TerminalRuntime) -> Option<crat
 pub(super) enum AgentStartError {
     InvalidName,
     UnsupportedKind(String),
+    InvalidManagedExecutable,
     InvalidArgument,
     InvalidTimeout,
     TargetNotFound(String),

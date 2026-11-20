@@ -948,6 +948,9 @@ pub struct ClientShellSnapshot {
     pub panes: Vec<ClientShellPane>,
     pub agents: Vec<ClientShellAgent>,
     pub commands: Vec<ClientShellCommand>,
+    /// Current pane, tab and workspace IDs whose close action would remove a workflow pane.
+    #[serde(default)]
+    pub protected_close_targets: std::collections::BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2792,6 +2795,7 @@ mod tests {
     #[test]
     fn client_shell_snapshot_roundtrip() {
         let msg = ServerMessage::ClientShellSnapshot(Box::new(ClientShellSnapshot {
+            protected_close_targets: ["w1".into(), "w1:t1".into(), "w1:p1".into()].into(),
             boot_id: "boot-1".into(),
             revision: 1,
             config_diagnostic: Some("endpoint config warning".into()),

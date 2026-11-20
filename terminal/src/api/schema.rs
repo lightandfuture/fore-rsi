@@ -146,6 +146,7 @@ operations::define_operations! {
     PluginPaneFocus(PluginPaneFocusParams) => "plugin.pane.focus", true, false;
     PluginPaneClose(PluginPaneCloseParams) => "plugin.pane.close", true, false;
     PaneEnsure(PaneEnsureParams) => "pane.ensure", true, false;
+    PaneRemove(PaneRemoveParams) => "pane.remove", true, false;
 }
 
 #[cfg(test)]

@@ -1634,7 +1634,9 @@ impl AppState {
                 let Some(terminal) = self.terminals.get_mut(&terminal_id) else {
                     return Vec::new();
                 };
-                if terminal.cwd != cwd {
+                if terminal.managed_key.as_deref() != Some(crate::terminal::WORK_PROGRESS_PANE_KEY)
+                    && terminal.cwd != cwd
+                {
                     terminal.cwd = cwd;
                     self.mark_session_dirty();
                 }

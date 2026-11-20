@@ -27,24 +27,6 @@ pub(crate) fn resolve_new_terminal_cwd(
     }
 }
 
-pub(super) fn launch_cwd_for_terminal(
-    terminal_id: &crate::terminal::TerminalId,
-    terminals: &std::collections::HashMap<
-        crate::terminal::TerminalId,
-        crate::terminal::TerminalState,
-    >,
-    terminal_runtimes: &crate::terminal::TerminalRuntimeRegistry,
-) -> Option<PathBuf> {
-    terminal_runtimes
-        .get(terminal_id)
-        .and_then(|runtime| runtime.follow_cwd())
-        .or_else(|| {
-            terminals
-                .get(terminal_id)
-                .map(|terminal| terminal.cwd.clone())
-        })
-}
-
 impl App {
     pub(super) fn seed_cwd_from_workspace(&self, ws_idx: usize) -> Option<PathBuf> {
         self.state
@@ -59,13 +41,10 @@ impl App {
         pane_id: crate::layout::PaneId,
     ) -> Option<PathBuf> {
         let workspace = self.state.workspaces.get(ws_idx)?;
-        let tab = workspace
-            .tabs
-            .get(workspace.find_tab_index_for_pane(pane_id)?)?;
-        launch_cwd_for_terminal(
-            tab.terminal_id(pane_id)?,
+        self.terminal_runtimes.project_cwd(
+            workspace.terminal_id(pane_id)?,
             &self.state.terminals,
-            &self.terminal_runtimes,
+            crate::terminal::TerminalRuntime::follow_cwd,
         )
     }
 
@@ -148,8 +127,8 @@ impl App {
         )?;
         self.terminal_runtimes.insert(terminal.id.clone(), runtime);
         self.state.terminals.insert(terminal.id.clone(), terminal);
-        self.state.workspaces.push(ws);
-        let idx = self.state.workspaces.len() - 1;
+        let idx = self.state.workspaces.len();
+        self.register_workspace(idx, ws);
         self.state
             .remove_alias_shadowed_by_new_pane(self.state.workspaces[idx].tabs[0].root_pane);
         let workspace_id = self.state.workspaces[idx].id.clone();
@@ -161,6 +140,12 @@ impl App {
         }
         self.schedule_session_save();
         Ok(idx)
+    }
+
+    /// Register the layout immediately; the Git worker fills in the repository label and branch.
+    pub(super) fn register_workspace(&mut self, index: usize, workspace: Workspace) {
+        self.state.workspaces.insert(index, workspace);
+        self.request_git_identity_refresh(std::time::Instant::now());
     }
 
     pub(super) fn collect_panes_for_workspace(
@@ -343,6 +328,7 @@ impl App {
         Some(crate::api::schema::PaneInfo {
             pane_id: self.public_pane_id(ws_idx, pane_id)?,
             terminal_id: terminal.id.to_string(),
+            managed_key: terminal.managed_key.clone(),
             workspace_id: self.public_workspace_id(ws_idx),
             tab_id: self.public_tab_id(ws_idx, tab_idx)?,
             focused,

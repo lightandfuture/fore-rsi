@@ -141,6 +141,7 @@ herdr notification show <title> [--body TEXT] [--position top-left|top-right|bot
 
 ```bash
 herdr session list [--json]
+herdr --session <name> session info [--json]
 herdr session attach <name>
 herdr session stop <name> [--json]
 herdr session delete <name> [--json]
@@ -205,6 +206,7 @@ herdr tab close <tab_id>
 ```bash
 herdr pane list [--workspace <workspace_id>]
 herdr pane ensure --key KEY --cwd PATH [--workspace ID] [--label TEXT] [-- COMMAND [ARG ...]]
+herdr pane remove --key KEY --terminal-id ID
 herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 herdr pane layout [--pane ID|--current]
@@ -224,7 +226,7 @@ herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--f
 herdr pane close <pane_id>
 ```
 
-`pane ensure` 按会话内的 key 复用窗格，改名或移动不影响查找。`--workspace` 只指定新窗格建在哪里，不会移动已有窗格或切换焦点。空会话未指定工作区时，新工作区的首个标签页获得焦点。省略命令会打开普通 shell，沿用原生 Agent 会话恢复机制；显式传入的命令会直接运行，恢复布局时重新启动，命令退出时关闭窗格。已保存的窗格不可用时会报告错误，不另建副本。
+`pane ensure` 按会话内的 key 复用窗格，改名或移动不影响查找。`--workspace` 只指定新窗格建在哪里，不会移动已有窗格或切换焦点。空会话未指定工作区时，新工作区的首个标签页获得焦点。省略命令会打开普通 shell，沿用原生 Agent 会话恢复机制；显式传入的命令会直接运行，恢复布局时重新启动，命令退出时关闭窗格。已保存的窗格不可用时会报告错误，不另建副本。要释放该窗格，把相同的 key 与 `ensure` 返回的 `terminal_id` 传给 `remove`。即使之后有新窗格使用了这个 key，也不会误关。
 
 接受 `--current` 的窗格命令在 Herdr 窗格内运行时使用调用方的 `HERDR_PANE_ID`。对 `pane split` 而言，显式窗格 ID 或 `--pane ID` 拆分指定窗格。省略目标时，若存在 `HERDR_PANE_ID` 则拆分调用方窗格，否则使用当前聚焦的窗格。`--current` 必须有调用方窗格；缺少 `HERDR_PANE_ID` 时会报错。拆分响应中的新窗格 ID 位于 `.result.pane.pane_id`。
 
@@ -329,7 +331,7 @@ herdr agent rename <target> <name>|--clear
 herdr agent focus <target>
 herdr agent wait <target> [--until STATUS]... [--timeout MS]
 herdr agent attach <target> [--takeover]
-herdr agent start <name> --kind KIND --pane ID [--no-wait] [--timeout MS] [-- <agent-args...>]
+herdr agent start <name> --kind KIND --pane ID [--managed-executable PATH] [--no-wait] [--timeout MS] [-- <agent-args...>]
 herdr agent explain <target> [--json|--verbose]
 herdr agent explain --file PATH --agent LABEL [--json|--verbose]
 ```
@@ -337,6 +339,8 @@ herdr agent explain --file PATH --agent LABEL [--json|--verbose]
 智能体目标只能是唯一的实时智能体名称,或当前承载该智能体的窗格 ID。终端 ID 和单独的智能体 kind 标签不能作为目标。通过 `agent start` 启动的智能体必须有名称;手动启动的智能体保持未命名,通过窗格 ID 寻址。
 
 `agent start` 会在现有可用 shell 窗格中启动智能体:交互式 shell 必须占用前台,不能有正在前台运行的命令、编辑器或智能体。拓扑必须单独创建。名称在实时智能体中必须唯一,并匹配 `[a-z][a-z0-9_-]{0,31}`。支持的 kind 是 `pi`、`claude`、`codex`、`gemini`、`cursor`、`devin`、`agy`、`cline`、`omp`、`mastracode`、`opencode`、`copilot`、`kimi`、`kiro`、`droid`、`amp`、`grok`、`hermes`、`kilo`、`qodercli`、`qwen`、`letta`、`maki` 和 `muse`。名称属于当前窗格占用者,在该智能体退出、release 或被替换时清除;短暂的检测不确定不会清除它。
+
+对于 `pane ensure --key` 创建的窗格，可用 `--managed-executable PATH` 指定启动程序的绝对路径。窗格会保存该路径和参数，用于下次恢复。使用相同参数再次启动时，会接回正在运行的智能体，不会重复发送启动命令。
 
 默认等待智能体就绪；已经开始执行初始任务的智能体也视为启动成功。`--no-wait` 在运行内核接受启动请求后返回，客户端可以随后连接并处理启动交互。默认启动超时为 30000 毫秒；显式值必须大于 3000 且不超过 300000。
 

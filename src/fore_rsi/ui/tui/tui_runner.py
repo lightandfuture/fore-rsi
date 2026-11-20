@@ -5,13 +5,14 @@
 
 import asyncio
 import os
-from pathlib import Path
 import signal
 import subprocess
+from pathlib import Path
 
 from fore_rsi.config import Config
 from fore_rsi.ui.tui.work_progress.work_progress_runner import ensure_work_progress_pane
-from fore_rsi.utils.terminal import terminal_command
+from fore_rsi.ui.tui.work_progress.work_progress_runtime import prepare_progress_runtime
+from fore_rsi.utils.terminal import run_terminal, terminal_command
 
 
 class TuiRunner:
@@ -22,6 +23,11 @@ class TuiRunner:
         self._session_name = session_name if session_name is not None else Config.DEFAULT_SESSION_NAME
         self._working_directory = Path.cwd()
         self._command = terminal_command([], self._session_name)
+
+    async def start_server(self) -> None:
+        """Prepare the progress runtime before the server starts or restores a session."""
+        await prepare_progress_runtime(self._session_name)
+        await run_terminal(["server", "start"], self._session_name, capture_output=True)
 
     async def prepare(self) -> str:
         """Prepare the progress pane and return the terminal workspace shared with workflow agents."""

@@ -145,6 +145,7 @@ herdr notification show <title> [--body TEXT] [--position top-left|top-right|bot
 
 ```bash
 herdr session list [--json]
+herdr --session <name> session info [--json]
 herdr session attach <name>
 herdr session stop <name> [--json]
 herdr session delete <name> [--json]
@@ -209,6 +210,7 @@ Workspace and tab creation, and pane splitting, leave focus unchanged by default
 ```bash
 herdr pane list [--workspace <workspace_id>]
 herdr pane ensure --key KEY --cwd PATH [--workspace ID] [--label TEXT] [-- COMMAND [ARG ...]]
+herdr pane remove --key KEY --terminal-id ID
 herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 herdr pane layout [--pane ID|--current]
@@ -229,7 +231,7 @@ herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--f
 herdr pane close <pane_id>
 ```
 
-`pane ensure` reuses the pane with the given key even if it was renamed or moved. `--workspace` selects where to create a missing pane; it does not move or focus an existing one. Without a target in an empty session, the new workspace's first tab receives focus. Omit the command to open a shell with normal agent session restore. An explicit command runs directly, is relaunched on layout restore, and closes its pane when it exits. If the saved pane is unavailable, `ensure` reports its error instead of creating another copy.
+`pane ensure` reuses the pane with the given key even if it was renamed or moved. `--workspace` selects where to create a missing pane; it does not move or focus an existing one. Without a target in an empty session, the new workspace's first tab receives focus. Omit the command to open a shell with normal agent session restore. An explicit command runs directly, is relaunched on layout restore, and closes its pane when it exits. If the saved pane is unavailable, `ensure` reports its error instead of creating another copy. To release it, pass `remove` the same key and the `terminal_id` returned by `ensure`. A later terminal using the same key is left alone.
 
 For pane commands that accept `--current`, Herdr uses the calling pane's
 `HERDR_PANE_ID` when the command runs inside a Herdr pane. For `pane split`,
@@ -350,7 +352,7 @@ herdr agent rename <target> <name>|--clear
 herdr agent focus <target>
 herdr agent wait <target> [--until STATUS]... [--timeout MS]
 herdr agent attach <target> [--takeover]
-herdr agent start <name> --kind KIND --pane ID [--no-wait] [--timeout MS] [-- <agent-args...>]
+herdr agent start <name> --kind KIND --pane ID [--managed-executable PATH] [--no-wait] [--timeout MS] [-- <agent-args...>]
 herdr agent explain <target> [--json|--verbose]
 herdr agent explain --file PATH --agent LABEL [--json|--verbose]
 ```
@@ -358,6 +360,8 @@ herdr agent explain --file PATH --agent LABEL [--json|--verbose]
 Agent targets are either a unique live agent name or the pane ID that currently hosts the agent. Terminal IDs and bare agent-kind labels are not agent targets. Agents started through `agent start` require a name; manually launched agents remain unnamed and use their pane ID.
 
 `agent start` activates an existing available shell pane: the pane's interactive shell must own the foreground, with no foreground command, editor, or agent running. Topology must be created separately. Names are unique among live agents and must match `[a-z][a-z0-9_-]{0,31}`. The kind selects Herdr's canonical interactive executable, while arguments after `--` are passed to that executable. Supported kinds are `pi`, `claude`, `codex`, `gemini`, `cursor`, `devin`, `agy`, `cline`, `omp`, `mastracode`, `opencode`, `copilot`, `kimi`, `kiro`, `droid`, `amp`, `grok`, `hermes`, `kilo`, `qodercli`, `qwen`, `letta`, `maki`, and `muse`. A name follows the current pane occupant and is cleared when that agent exits, is released, or is replaced. Temporary detection uncertainty does not clear it.
+
+For a pane created with `pane ensure --key`, `--managed-executable PATH` selects an absolute launcher. The pane retains the launcher and arguments for restore. Repeating the same launch attaches to the running agent without submitting the command again.
 
 By default, start waits for interactive readiness, including an agent already working on its initial task. `--no-wait` returns when the runtime accepts the launch so a client can attach and handle startup prompts. The default startup timeout is 30000 milliseconds; explicit values must be greater than 3000 and no more than 300000.
 

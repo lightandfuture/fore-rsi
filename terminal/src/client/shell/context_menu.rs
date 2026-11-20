@@ -5,7 +5,7 @@ impl ClientContextMenuOverlay {
         use ClientContextMenuAction as Action;
 
         let item = |label, action| ClientContextMenuItem { label, action };
-        match &self.target {
+        let mut items = match &self.target {
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
                 vec![item("Rename", Action::Rename), item("Close", Action::Close)]
             }
@@ -79,7 +79,16 @@ impl ClientContextMenuOverlay {
                 ]);
                 items
             }
+        };
+        if self.close_protected {
+            items.retain(|item| {
+                !matches!(
+                    item.action,
+                    Action::Close | Action::ClosePane | Action::RemoveWorktree
+                )
+            });
         }
+        items
     }
 }
 
@@ -109,6 +118,7 @@ impl ClientShellState {
             self.group_is_collapsed(&self.active_endpoint_id, &worktree.key)
         });
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            close_protected: self.close_is_protected(&workspace_id),
             target: ClientContextMenuTarget::Workspace {
                 workspace_id,
                 is_git: worktree.is_some() || workspace.branch.is_some(),
@@ -132,6 +142,7 @@ impl ClientShellState {
             return;
         };
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            close_protected: self.close_is_protected(&tab_id),
             target: ClientContextMenuTarget::Tab {
                 tab_id,
                 workspace_id: tab.workspace_id.clone(),
@@ -154,6 +165,7 @@ impl ClientShellState {
             .clone()
             .filter(|focused| focused != &pane_id);
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            close_protected: self.close_is_protected(&pane_id),
             target: ClientContextMenuTarget::Pane {
                 pane_id,
                 workspace_id: pane.workspace_id.clone(),

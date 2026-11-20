@@ -255,6 +255,7 @@ fn agent_start(params: AgentStartParams, wait: bool) -> std::io::Result<i32> {
         name,
         kind,
         pane_id,
+        managed_executable,
         args: agent_args,
         timeout_ms,
     } = params;
@@ -286,6 +287,7 @@ fn agent_start(params: AgentStartParams, wait: bool) -> std::io::Result<i32> {
                 name: name.clone(),
                 kind: kind.clone(),
                 pane_id: pane_id.clone(),
+                managed_executable: managed_executable.clone(),
                 args: agent_args.clone(),
                 timeout_ms,
             }),

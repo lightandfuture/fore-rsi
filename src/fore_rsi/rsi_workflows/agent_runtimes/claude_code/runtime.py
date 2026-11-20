@@ -7,12 +7,13 @@ import json
 import os
 from pathlib import Path
 
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
+from fore_rsi.config import ReasoningEffort
 from fore_rsi.rsi_workflows.agent_runtimes.installation import ensure_cli_installed
+from fore_rsi.rsi_workflows.agent_runtimes.named_conversation import NamedConversationRuntime
 
 
-class ClaudeCodeAgentRuntime(AgentRuntime):
-    """Runtime contract for Claude Code's native CLI."""
+class ClaudeCodeAgentRuntime(NamedConversationRuntime):
+    """Run Claude Code using its usual settings and an explicit member conversation UUID."""
 
     harness_name = "claude"
 
@@ -26,8 +27,15 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
             shell="bash",
         )
 
-    @staticmethod
-    def _tool_mcp_args(url: str) -> list[str]:
-        """Add the tool endpoint using Claude Code's per-invocation MCP configuration."""
-        config = {"mcpServers": {"fore_rsi": {"type": "http", "url": url}}}
+    def _effort_args(self, effort: ReasoningEffort) -> list[str]:
+        """Set the reasoning level for this Claude Code invocation."""
+        return ["--effort", effort]
+
+    def _native_home(self) -> Path:
+        """Use the user's Claude Code settings and credential store without copying them."""
+        return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser().resolve()
+
+    def _tool_mcp_args(self) -> list[str]:
+        """Add this member's tool client without replacing other configured MCP servers."""
+        config = {"mcpServers": {"fore_rsi": self._stdio_server()}}
         return [f"--mcp-config={json.dumps(config)}"]

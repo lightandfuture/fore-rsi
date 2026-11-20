@@ -7,23 +7,23 @@
 Run `fore-rsi` or `fore-rsi run` in the project directory to start a ForeRSI session and describe the task in the conversation. Both forms accept the same options. You can select a workflow, choose an agent backend, name the session, and supply a task file:
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput \
+fore-rsi --session sglang-throughput \
   --task tasks/inference-optimization/sglang-throughput.md
 ```
 
 This example uses the task file from the ForeRSI repository root. All startup options are optional:
 
-- `--workflow NAME` selects `default` for general tasks, `inference` for inference optimization, or a custom workflow by name. Omitting it selects `default`.
-- `--harness NAME` selects `pi` (the default), `codex`, or `claude` (Claude Code). ForeRSI reuses the installed CLI or runs that backend's official installer before opening the interface.
+- `--workflow NAME` selects a registered workflow by name. The built-in `default` is selected if you omit it.
+- `--harness NAME` selects the native agent CLI: `pi`, `codex`, or `claude` (Claude Code). New sessions default to Pi; resuming by name keeps the saved backend.
+- `--model MODEL` selects the entry agent's model (the Coordinator in the default workflow). Use a model name accepted by the backend, or omit it to keep the native selection.
+- `--effort LEVEL` sets reasoning effort for that agent, independently of `--model`. For example: `fore-rsi --harness claude --model sonnet --effort high`. Supported levels depend on the backend and model; omitting the option keeps the native setting.
 - `--session NAME` names the ForeRSI session to create or resume.
 - `--task FILE` provides a Markdown task file. Omit it to describe the task in the conversation.
 - `--cache-dir PATH` chooses workflow storage for a new session (default: `./cache`). Relative paths use the current project's Git repository root, or the startup directory outside Git; absolute paths are used directly. Workflow data is stored in its `workflows/` subdirectory. Each session name keeps its original storage location for the current user, even when started again from another directory.
 
-Quote values containing spaces. Relative task paths are relative to the working directory. With either task input method, you can continue sharing materials and refining requirements in the conversation.
+Quote values containing spaces. Relative task paths are relative to the working directory. To change a requirement, tell the Coordinator in the same conversation. Each change is saved as a new task revision with its own file; earlier revisions stay readable and the session resumes from the latest one.
 
-To resume, use the same `--session` name without resubmitting `--task`. See [Exit and resume](../README.md#exit-and-resume) for the exit shortcut and recovery behavior.
+To resume, use the same `--session` name without resubmitting `--task`. Each agent reopens its own native conversation under `<cache-dir>/workflows/<session>/harnesses/`. To switch backends, start a new named session. See [Exit and resume](../README.md#exit-and-resume) for the exit shortcut.
 
 `fore-rsi --help` lists available options; `fore-rsi --version` prints the installed version. Both commands exit after displaying their output.
 
@@ -51,7 +51,7 @@ Select Work progress at the top of the sidebar to switch to the progress page. U
 fore-rsi workprogress --session sglang-throughput
 ```
 
-The page shows the session name and an empty progress area. Press `q` or `Esc` to close the page while leaving the workflow running. It uses the session's saved location and does not accept `--cache-dir`.
+Press `q` or `Esc` to close this separate viewer without affecting the workflow. In the session terminal, you can close panes you create. The workflow keeps its progress and agent panes open. The command uses the session's saved location and does not accept `--cache-dir`.
 
 ### Stop a session
 
@@ -73,9 +73,9 @@ fore-rsi delete --session sglang-throughput
 
 `delete` requires `--session NAME`. It uses the session's saved storage location, stops the workflow and waits for cleanup, then stops and deletes the terminal session, and finally removes the workflow directory and its storage binding. It also handles sessions present on only one side. If shutdown fails, the command reports the error and retains the workflow cache and binding.
 
-The default session `default`, project files, and agent-owned configuration and conversation history are preserved. On Windows, exit the running workflow before deleting its session.
+Deletion removes the session's native agent conversations along with its workflow data. It preserves the default session `default`, project files outside the session directory, and the native CLI's personal settings and history outside ForeRSI. On Windows, exit the running workflow before deleting its session.
 
-`--workflow`, `--harness`, and `--task` apply only to `run`. `--cache-dir` applies to `run`, `list`, `stop`, and `delete`.
+`--workflow`, `--harness`, `--model`, `--effort`, and `--task` apply only to `run`. `--cache-dir` applies to `run`, `list`, `stop`, and `delete`.
 
 ### Diagnostic logs
 
@@ -97,23 +97,23 @@ Agent conversations and native terminal logs retain their own recording paths.
 在项目目录运行 `fore-rsi` 或 `fore-rsi run`，进入终端界面后直接描述任务。两种写法接受相同的参数，可以选择工作流、指定 Agent 后端、命名会话，并提供任务文件：
 
 ```bash
-fore-rsi --workflow inference \
-  --harness pi \
-  --session sglang-throughput \
+fore-rsi --session sglang-throughput \
   --task tasks/inference-optimization/sglang-throughput.md
 ```
 
 示例使用 ForeRSI 仓库根目录下的任务文件。启动参数均可按需省略：
 
-- `--workflow NAME` 选择通用工作流 `default`、推理优化工作流 `inference`，或按名称选择自定义工作流。省略时使用 `default`。
-- `--harness NAME` 选择 `pi`（默认）、`codex` 或 `claude`（Claude Code）。ForeRSI 复用已安装的 CLI；缺失时，先运行该后端的官方安装器，再打开界面。
+- `--workflow NAME` 按名称选择已注册的工作流，省略时使用内置的 `default`。
+- `--harness NAME` 选择运行 Agent 的原生 CLI：`pi`、`codex` 或 `claude`（Claude Code）。新会话默认使用 Pi，按名称恢复时沿用原来的后端。
+- `--model MODEL` 只指定入口 Agent（默认工作流的 Coordinator）使用的模型。名称沿用所选后端的写法；省略时由后端选择。
+- `--effort LEVEL` 设置该 Agent 的推理强度，可以单独使用，也可以搭配模型，例如 `fore-rsi --harness claude --model sonnet --effort high`。可用档位取决于后端和模型，省略时沿用原生设置。
 - `--session NAME` 指定要创建或恢复的 ForeRSI 会话名称。
 - `--task FILE` 提供 Markdown 任务文件。省略时，在对话中直接描述任务。
 - `--cache-dir PATH` 指定新会话的工作流存储目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流数据保存在其中的 `workflows/` 子目录。当前用户的每个会话名称绑定首次确定的存储位置，之后即使换目录启动，也沿用原位置。
 
-值中有空格时加引号。任务文件的相对路径以工作目录为基准。两种任务输入方式都可以在后续对话中继续补充材料或调整要求。
+值中有空格时加引号。任务文件的相对路径以工作目录为基准。要调整要求，直接在原对话中告诉协调者即可。发生变化的任务会保存为新的版本文件；旧版仍可查阅，恢复会话时使用最新版。
 
-恢复时使用相同的 `--session` 名称，无需重复提交 `--task`。退出快捷键和恢复行为见[退出与恢复](../README_zh.md#退出与恢复)。
+恢复时使用相同的 `--session` 名称，无需重复提交 `--task`。每个 Agent 都会从 `<cache-dir>/workflows/<session>/harnesses/` 下打开自己的原生对话记录。要换后端，请另起一个会话名。退出快捷键见[退出与恢复](../README_zh.md#退出与恢复)。
 
 `fore-rsi --help` 显示可用参数，`fore-rsi --version` 显示安装版本，输出后退出。
 
@@ -141,7 +141,7 @@ fore-rsi list
 fore-rsi workprogress --session sglang-throughput
 ```
 
-页面显示会话名称和空状态。按 `q` 或 `Esc` 关闭页面，工作流继续运行。该命令自动使用会话保存的位置，不接受 `--cache-dir`。
+单独打开的进展页可按 `q` 或 `Esc` 退出，不影响工作流。终端里只能关闭自己创建的窗格，工作流的进展页和 Agent 窗格会保留。该命令使用会话保存的位置，不接受 `--cache-dir`。
 
 ### 停止会话
 
@@ -163,9 +163,9 @@ fore-rsi delete --session sglang-throughput
 
 `delete` 必须提供 `--session NAME`。命令按会话绑定的存储位置找到工作流，先停止并等待清理完成，再停止并删除终端会话，最后删除工作流目录及其存储绑定。只有工作流或只有终端记录的会话也可以删除。停止失败时，命令会报告错误并保留工作流缓存与绑定。
 
-默认会话 `default`、项目文件，以及 Agent 自行管理的配置和对话记录会保留。Windows 上需先退出运行中的工作流，再删除会话。
+删除会话会一并删除其中各 Agent 的原生对话记录。默认会话 `default`、会话目录之外的项目文件，以及原生 CLI 在 ForeRSI 之外保存的个人配置和历史记录都会保留。Windows 上需先退出运行中的工作流，再删除会话。
 
-`--workflow`、`--harness` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run`、`list`、`stop` 和 `delete`。
+`--workflow`、`--harness`、`--model`、`--effort` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run`、`list`、`stop` 和 `delete`。
 
 ### 诊断日志
 

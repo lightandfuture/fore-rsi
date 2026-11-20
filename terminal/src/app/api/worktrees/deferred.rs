@@ -343,6 +343,13 @@ impl App {
             return;
         }
 
+        if self
+            .protected_close_targets()
+            .contains(&workspace_internal_id)
+        {
+            Self::send_api_response(respond_to, crate::app::workflow_panes::close_error(id));
+            return;
+        }
         let shutdown_panes =
             if Self::should_shutdown_workspace_terminal_runtimes_for_worktree_remove(params.force) {
                 self.shutdown_workspace_terminal_runtimes_for_worktree_remove(ws_idx)
@@ -588,15 +595,22 @@ impl App {
                         .cloned()
                         .map(|space| self.worktree_info_for_membership(&space, None));
                 }
-                self.close_removed_linked_worktree_workspace(ws_idx);
-                self.shutdown_detached_terminal_runtimes();
-                self.emit_event(EventEnvelope {
-                    event: EventKind::WorkspaceClosed,
-                    data: EventData::WorkspaceClosed {
-                        workspace_id: workspace_id.clone(),
-                        workspace: workspace_snapshot.clone(),
-                    },
-                });
+                // A workflow pane may have arrived while Git was removing the checkout.
+                if self.protected_close_targets().contains(&workspace_id) {
+                    self.state.workspaces[ws_idx].worktree_space = None;
+                    self.schedule_session_save();
+                    self.emit_workspace_updated(ws_idx);
+                } else {
+                    self.close_removed_linked_worktree_workspace(ws_idx);
+                    self.shutdown_detached_terminal_runtimes();
+                    self.emit_event(EventEnvelope {
+                        event: EventKind::WorkspaceClosed,
+                        data: EventData::WorkspaceClosed {
+                            workspace_id: workspace_id.clone(),
+                            workspace: workspace_snapshot.clone(),
+                        },
+                    });
+                }
             } else if let Some(snapshot) = workspace_snapshot.as_ref() {
                 workspace_id = snapshot.workspace_id.clone();
             }

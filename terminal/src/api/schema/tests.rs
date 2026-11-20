@@ -98,6 +98,7 @@ fn agent_start_and_prompt_requests_round_trip() {
             name: "reviewer".into(),
             kind: "pi".into(),
             pane_id: "w1:p2".into(),
+            managed_executable: None,
             args: vec!["--no-session".into()],
             timeout_ms: Some(30_000),
         }),
@@ -819,6 +820,7 @@ fn worktree_request_and_response_round_trip() {
                 agent_status: AgentStatus::Unknown,
             },
             root_pane: PaneInfo {
+                managed_key: None,
                 pane_id: "w_1-1".into(),
                 terminal_id: "term_1".into(),
                 workspace_id: "w_1".into(),
@@ -1248,6 +1250,7 @@ fn create_response_round_trips_with_root_pane() {
                 agent_status: AgentStatus::Unknown,
             },
             root_pane: PaneInfo {
+                managed_key: None,
                 pane_id: "w_1-3".into(),
                 terminal_id: "term_example".into(),
                 workspace_id: "w_1".into(),

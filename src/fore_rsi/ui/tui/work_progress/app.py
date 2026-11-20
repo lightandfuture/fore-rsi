@@ -24,9 +24,10 @@ class WorkProgressApp(App[None]):
     }
     """
 
-    def __init__(self, session_directory: Path) -> None:
-        """Bind the page to its session and use the terminal's locale for its labels."""
+    def __init__(self, session_directory: Path, *, embedded: bool = False) -> None:
+        """Bind the page to its session, pane ownership, and terminal locale."""
         super().__init__()
+        self._embedded = embedded
         language = next(
             (os.environ[key] for key in ("LC_ALL", "LC_MESSAGES", "LANG") if os.environ.get(key)),
             "",
@@ -39,7 +40,13 @@ class WorkProgressApp(App[None]):
         self.bind("escape", "quit", show=False)
 
     def compose(self) -> ComposeResult:
-        """Provide the session header, empty progress area, and close shortcut."""
+        """Provide the progress display and a footer for actions the page allows."""
         yield Header()
         yield Static(self._empty_message, id="empty")
         yield Footer()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Hide and disable Textual's close actions when the workflow owns the pane."""
+        if self._embedded and action in {"quit", "help_quit"}:
+            return False
+        return super().check_action(action, parameters)

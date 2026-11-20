@@ -554,6 +554,7 @@ pub(super) enum ClientContextMenuTarget {
 #[derive(Debug)]
 pub(super) struct ClientContextMenuOverlay {
     pub(super) target: ClientContextMenuTarget,
+    pub(super) close_protected: bool,
     pub(super) x: u16,
     pub(super) y: u16,
     pub(super) highlighted: usize,

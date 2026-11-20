@@ -260,6 +260,11 @@ fn session_command() -> Command {
         .about("Manage named persistent sessions")
         .subcommand(Command::new("list").about("List sessions").arg(json_flag()))
         .subcommand(
+            Command::new("info")
+                .about("Show the selected session's status and storage")
+                .arg(json_flag()),
+        )
+        .subcommand(
             Command::new("attach")
                 .about("Attach to a session")
                 .arg(required("name", "NAME")),

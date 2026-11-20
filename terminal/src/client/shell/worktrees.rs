@@ -212,9 +212,14 @@ impl ClientShellState {
                 outcome.repaint = true;
                 return;
             }
-            KeybindAction::RemoveWorktree => PendingEndpointKind::PrepareWorktreeRemove {
-                workspace_id: workspace_id.clone(),
-            },
+            KeybindAction::RemoveWorktree => {
+                if self.reject_protected_close(&workspace_id, outcome) {
+                    return;
+                }
+                PendingEndpointKind::PrepareWorktreeRemove {
+                    workspace_id: workspace_id.clone(),
+                }
+            }
             _ => return,
         };
         self.push_endpoint_method_with_kind(

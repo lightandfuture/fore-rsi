@@ -4,15 +4,17 @@
 """Execution interface and discovery metadata shared by ForeRSI workflows."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
-from fore_rsi.config import WorkflowConfig
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
+from fore_rsi.config import AgentConfig, WorkflowConfig
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp_host import ToolMcpHost
-from fore_rsi.rsi_workflows.base_agent import BaseAgent
-from fore_rsi.rsi_workflows.workflow_runtimes.agent_scheduler import AgentScheduler
+from fore_rsi.rsi_workflows.base_agent import AgentState, BaseAgent
+from fore_rsi.rsi_workflows.workflow_runtimes.agent_scheduler import (
+    AgentScheduler,
+    SchedulingPriority,
+)
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 
 
@@ -21,14 +23,18 @@ class BaseWorkflow(ABC):
 
     # Name selected by --workflow, independent of the module and class names.
     workflow_name: ClassVar[str]
-    agent_roles: ClassVar[tuple[type[BaseAgent], ...]]
+    agent_roles: ClassVar[dict[str, type[BaseAgent]]]
 
     def __init__(self, config: WorkflowConfig, session_directory: Path) -> None:
         """Bind workflow settings and storage, then initialize scheduling and workgroups."""
-        self._config = config
+        self.config = config
         self.session_directory = session_directory
         self.tool_mcp_host = ToolMcpHost()
-        self.agent_scheduler = AgentScheduler(agent_roles=self.agent_roles)
+        self.agent_scheduler = AgentScheduler(
+            role_classes=self.agent_roles,
+        )
+        # Workflow owns global Agent naming; Scheduler owns active reservations.
+        self.agent_name_counters: dict[str, int] = {}
         self.workgroups: dict[str, Workgroup] = {}
         self.global_workgroup = self.create_workgroup(WorkflowConfig.GLOBAL_WORKGROUP_NAME)
 
@@ -37,57 +43,71 @@ class BaseWorkflow(ABC):
         """Execute within the prepared terminal workspace, propagating errors and cancellation."""
         ...
 
-    def create_workgroup(
-        self,
-        workgroup_name: str,
-        initial_agents: Sequence[tuple[type[BaseAgent], str, AgentRuntime]] = (),
-    ) -> Workgroup:
-        """Create a workgroup and its initial agents without starting execution.
-
-        Initial agents use (agent_class, agent_name, agent_runtime) tuples.
-        """
+    def create_workgroup(self, workgroup_name: str) -> Workgroup:
+        """Create an empty Workgroup for later Scheduler-owned Agent creation."""
         if workgroup_name in self.workgroups:
             raise ValueError(
                 f"Workgroup {workgroup_name!r} already exists in this workflow."
             )
-
         workgroup = Workgroup(workgroup_name)
         self.workgroups[workgroup_name] = workgroup
-        try:
-            for agent_class, agent_name, agent_runtime in initial_agents:
-                self.create_agent(
-                    agent_class=agent_class,
-                    agent_name=agent_name,
-                    workgroup_name=workgroup_name,
-                    agent_runtime=agent_runtime,
-                )
-        except BaseException:
-            # Keep failed initialization from leaving a partially populated group.
-            del self.workgroups[workgroup_name]
-            raise
         return workgroup
 
-    def create_agent(
+    async def request_agent_creation(
         self,
+        workflow_state: Mapping[str, object],
+        *,
         agent_class: type[BaseAgent],
-        agent_name: str,
-        workgroup_name: str,
-        agent_runtime: AgentRuntime,
-    ) -> BaseAgent:
-        """Create and register an agent, creating its workgroup when absent."""
+        agent_config: AgentConfig,
+        agent_name: str | None = None,
+        priority: SchedulingPriority = SchedulingPriority.LOW,
+    ) -> dict[str, str]:
+        """Request Scheduler-owned creation of one Agent from workflow context."""
+        workgroup_name = str(
+            workflow_state.get("workgroup_name") or WorkflowConfig.GLOBAL_WORKGROUP_NAME
+        )
         workgroup = self.workgroups.get(workgroup_name)
         if workgroup is None:
             workgroup = self.create_workgroup(workgroup_name)
-
-        if agent_name in workgroup.agents:
-            raise ValueError(
-                f"Agent {agent_name!r} already exists in workgroup {workgroup_name!r}."
+        if agent_name is None:
+            agent_name = str(
+                workflow_state.get("agent_name")
+                or self.next_agent_name(agent_class.role_name)
             )
+        # Scheduler owns quota admission and creation; Workflow supplies context only.
+        return await self.agent_scheduler.create_agent(
+            agent_class=agent_class,
+            agent_name=agent_name,
+            workgroup=workgroup,
+            agent_config=agent_config,
+            workflow=self,
+            workspace_id=str(workflow_state["workspace_id"]),
+            is_entry_agent=bool(workflow_state.get("is_entry", False)),
+            priority=priority,
+        )
 
-        agent = agent_class(agent_name, workgroup, agent_runtime)
-        workgroup.agents[agent_name] = agent
-        return agent
+    def next_agent_name(self, role_name: str) -> str:
+        """Return a workflow-wide unique role-based instance name."""
+        role_prefix = role_name.lower()
+        agent_index = self.agent_name_counters.get(role_prefix, 0) + 1
+        existing_agent_names = {
+            agent.agent_name
+            for workgroup in self.workgroups.values()
+            for agent in workgroup.agents.values()
+        }
+        while f"{role_prefix}-{agent_index}" in existing_agent_names:
+            agent_index += 1
+        self.agent_name_counters[role_prefix] = agent_index
+        return f"{role_prefix}-{agent_index}"
 
-    def get_agent(self, workgroup_name: str, agent_name: str) -> BaseAgent:
-        """Return an existing agent from the named workgroup."""
-        return self.workgroups[workgroup_name].agents[agent_name]
+    async def close_agent(self, workgroup_name: str, agent_name: str) -> None:
+        """Close a registered Agent and release its active or queued scheduler request."""
+        workgroup = self.workgroups.get(workgroup_name)
+        agent = workgroup.agents.get(agent_name) if workgroup is not None else None
+        if agent is None:
+            return
+        try:
+            await agent.agent_runtime.close()
+        finally:
+            if await self.agent_scheduler.release(agent):
+                agent.state = AgentState.RETIRED

@@ -21,6 +21,25 @@ impl TerminalRuntimeRegistry {
         self.runtimes.get(terminal_id)
     }
 
+    /// Resolve the directory to show, inherit or save. The progress viewer runs in private
+    /// session storage; its workspace must keep the project directory it was created with.
+    pub(crate) fn project_cwd(
+        &self,
+        id: &TerminalId,
+        terminals: &HashMap<TerminalId, super::TerminalState>,
+        observe: fn(&TerminalRuntime) -> Option<std::path::PathBuf>,
+    ) -> Option<std::path::PathBuf> {
+        let terminal = terminals.get(id);
+        if let Some(page) =
+            terminal.filter(|t| t.managed_key.as_deref() == Some(super::WORK_PROGRESS_PANE_KEY))
+        {
+            return Some(page.cwd.clone());
+        }
+        self.get(id)
+            .and_then(observe)
+            .or_else(|| terminal.map(|t| t.cwd.clone()))
+    }
+
     pub(crate) fn insert(
         &mut self,
         terminal_id: TerminalId,

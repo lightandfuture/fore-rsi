@@ -7,15 +7,19 @@ import asyncio
 import json
 import math
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from dataclasses import replace
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
 
-from fore_rsi.config import Config, WorkflowConfig
-from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
+from fore_rsi.config import Config, AgentConfig, WorkflowConfig
 from fore_rsi.rsi_workflows.workflow_runtimes.run_state import WorkflowState
+
+if TYPE_CHECKING:
+    from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 
 
 class WorkflowRunner:
@@ -23,7 +27,7 @@ class WorkflowRunner:
 
     def __init__(
         self,
-        workflow_class: type[BaseWorkflow],
+        workflow_class: type["BaseWorkflow"],
         workflow_config: WorkflowConfig,
         session_name: str | None,
         cache_dir: Path,
@@ -33,8 +37,19 @@ class WorkflowRunner:
         self._record_path = self._session_record_path(
             cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, self.session_name
         )
+        try:
+            saved = json.loads(self._record_path.read_bytes())
+        except FileNotFoundError:
+            self.harness = workflow_config.harness_or_default
+        else:
+            # Records predating backend selection were created by Pi workflows.
+            self.harness = saved.get("harness", AgentConfig.harness)
+            if workflow_config.harness is not None and workflow_config.harness != self.harness:
+                raise ValueError(
+                    f"Session {self.session_name!r} uses {self.harness!r}. Choose a new session to change backends."
+                )
         self.workflow = workflow_class(
-            workflow_config, session_directory=self._record_path.parent
+            replace(workflow_config, harness=self.harness), session_directory=self._record_path.parent
         )
 
     async def run(self, workspace_id: str) -> None:
@@ -156,6 +171,9 @@ class WorkflowRunner:
         record_path = WorkflowRunner._session_record_path(
             cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, session_name
         )
+        from fore_rsi.rsi_workflows.agent_runtimes.native_launch import remove_native_storage
+
+        remove_native_storage(record_path.parent, Config.SESSION_INDEX_PATH.parent)
         try:
             shutil.rmtree(record_path.parent)
         except FileNotFoundError:
@@ -206,6 +224,7 @@ class WorkflowRunner:
         record = {
             "session_name": self.session_name,
             "workflow_name": self.workflow.workflow_name,
+            "harness": self.harness,
             "state": state,
             "pid": process.pid,
             "process_created_at": process.create_time(),

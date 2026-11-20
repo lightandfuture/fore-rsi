@@ -244,6 +244,7 @@ pub(super) fn snapshot_with_completions(
             });
 
     let shell = protocol::ClientShellSnapshot {
+        protected_close_targets: app.protected_close_targets(),
         boot_id: boot_id.to_owned(),
         revision,
         config_diagnostic: config_diagnostic.map(str::to_owned),

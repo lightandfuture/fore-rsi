@@ -805,6 +805,13 @@
                 "null"
               ]
             },
+            "managed_key": {
+              "description": "The key assigned by pane.ensure follows the terminal across moves and restores.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "pane_id": {
               "type": "string"
             },
@@ -1348,6 +1355,13 @@
             },
             "kind": {
               "type": "string"
+            },
+            "managed_executable": {
+              "description": "In a keyed pane, launch this absolute executable and retain the complete argv for restore.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "name": {
               "type": "string"
@@ -2899,6 +2913,22 @@
             "pane_id",
             "source",
             "agent"
+          ],
+          "type": "object"
+        },
+        "PaneRemoveParams": {
+          "properties": {
+            "key": {
+              "description": "Managed key and exact terminal instance returned by pane.ensure.",
+              "type": "string"
+            },
+            "terminal_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "terminal_id"
           ],
           "type": "object"
         },
@@ -6364,6 +6394,22 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.remove",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneRemoveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -7960,6 +8006,13 @@
               ]
             },
             "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "managed_key": {
+              "description": "The key assigned by pane.ensure follows the terminal across moves and restores.",
               "type": [
                 "string",
                 "null"

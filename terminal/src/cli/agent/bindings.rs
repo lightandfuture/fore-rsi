@@ -270,7 +270,7 @@ pub(crate) fn command() -> Command {
             .arg(clap::Arg::new("no-wait").long("no-wait").action(clap::ArgAction::SetTrue)
                 .help("Return after the runtime accepts the launch, before interactive readiness"))
             .override_usage("herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS] [-- [AGENT_ARG]...]")
-            .after_help("The pane must be at its interactive shell prompt. By default, success means the expected agent was detected in the same terminal and is ready for input. With --no-wait, attach to the terminal to observe startup and handle interactive prompts.\n\nnext: herdr agent prompt <TARGET> <TEXT> --wait"))
+            .after_help("A new launch requires an idle shell. With --managed-executable, a matching command in a keyed pane can also be reattached. By default, success means the expected agent was detected in the same terminal and is ready for input. With --no-wait, attach to the terminal to observe startup and handle interactive prompts.\n\nnext: herdr agent prompt <TARGET> <TEXT> --wait"))
         .subcommand(leaf("attach", AttachProjection::arguments(), "Attach directly to an agent terminal")
             .override_usage("herdr agent attach <TARGET> [OPTIONS]"))
         .subcommand(leaf("explain", ExplainProjection::arguments(), "Explain agent detection state")

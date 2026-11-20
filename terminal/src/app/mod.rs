@@ -28,6 +28,7 @@ mod terminal_targets;
 mod terminal_titles;
 mod theme_sync;
 mod window_title;
+pub(crate) mod workflow_panes;
 mod worktrees;
 
 use std::collections::HashMap;
@@ -2981,6 +2982,7 @@ mod tests {
                 name: "worker".into(),
                 kind: "pi".into(),
                 pane_id,
+                managed_executable: None,
                 args: Vec::new(),
                 timeout_ms: Some(1_000),
             }),
@@ -3023,6 +3025,7 @@ mod tests {
                 name: "worker".into(),
                 kind: "codex".into(),
                 pane_id: pane_id.clone(),
+                managed_executable: None,
                 args: vec!["resume".into(), "codex-session".into()],
                 timeout_ms: Some(4_000),
             }),

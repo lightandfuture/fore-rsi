@@ -224,6 +224,9 @@ impl App {
         let Some(ws) = self.state.workspaces.get(ws_idx) else {
             return tab_not_found(id, &target.tab_id);
         };
+        if self.protected_close_targets().contains(&tab_id) {
+            return crate::app::workflow_panes::close_error(id);
+        }
         let closes_workspace = ws.tabs.len() <= 1;
         let terminal_ids = self.state.terminal_ids_for_tab(ws_idx, tab_idx);
         let pane_ids = ws

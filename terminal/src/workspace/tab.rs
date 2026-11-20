@@ -536,14 +536,7 @@ impl Tab {
         terminal_runtimes: &TerminalRuntimeRegistry,
     ) -> Option<PathBuf> {
         let terminal_id = self.terminal_id(pane_id)?;
-        terminal_runtimes
-            .get(terminal_id)
-            .and_then(|rt| rt.cwd())
-            .or_else(|| {
-                terminals
-                    .get(terminal_id)
-                    .map(|terminal| terminal.cwd.clone())
-            })
+        terminal_runtimes.project_cwd(terminal_id, terminals, TerminalRuntime::cwd)
     }
 
     pub fn foreground_cwd_for_pane(

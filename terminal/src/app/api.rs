@@ -1147,6 +1147,7 @@ impl App {
                 return self.handle_agent_send_keys(request.id, params);
             }
             Method::PaneEnsure(params) => return self.handle_pane_ensure(request.id, params),
+            Method::PaneRemove(params) => return self.handle_pane_remove(request.id, params),
             Method::PaneSplit(params) => return self.handle_pane_split(request.id, params),
             Method::PaneSwap(params) => return self.handle_pane_swap(request.id, params),
             Method::PaneMove(params) => return self.handle_pane_move(request.id, params),

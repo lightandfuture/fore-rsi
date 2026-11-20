@@ -652,7 +652,7 @@ fn restore_tab(
                     rows,
                     cols,
                     cwd.clone(),
-                    argv,
+                    &crate::app::workflow_panes::launch_argv(saved_managed_key.as_deref(), argv),
                     &launch_env,
                     crate::pane::AgentDetection::Enabled,
                     runtime_context.scrollback_limit_bytes,

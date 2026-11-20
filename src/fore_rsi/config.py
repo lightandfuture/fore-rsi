@@ -12,14 +12,18 @@ from platformdirs import user_state_path
 from tyro.conf import Positional, arg
 
 
+type ReasoningEffort = Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+
 @dataclass
-class HarnessConfig:
+class AgentConfig:
     """Execution settings supplied by workflows when constructing an agent runtime."""
 
     # Select the native execution backend.
     harness: str = "pi"
-    # None preserves the selected harness's model settings.
+    # Omitted settings keep the native conversation's choices.
     model: str | None = None
+    effort: ReasoningEffort | None = None
 
 
 @dataclass
@@ -36,8 +40,17 @@ class WorkflowConfig:
     workflow_name: Annotated[str, arg(name="workflow", prefix_name=False)] = "default"
     # Markdown task file.
     task: Annotated[Path | None, arg(prefix_name=False)] = None
-    # Select the agent execution backend: pi, codex, or claude (Claude Code).
-    harness: Annotated[str, arg(prefix_name=False)] = HarnessConfig.harness
+    # Select the native backend. New sessions default to pi; resumed sessions keep their backend.
+    harness: Annotated[str | None, arg(prefix_name=False, help_behavior_hint="")] = None
+    # Select the entry agent's model. Omit to keep the backend's model selection.
+    entry_model: Annotated[str | None, arg(name="model", prefix_name=False, help_behavior_hint="")] = None
+    # Set reasoning effort for the workflow's entry agent only. Omit to keep the backend's setting.
+    entry_effort: Annotated[ReasoningEffort | None, arg(name="effort", prefix_name=False, help_behavior_hint="")] = None
+
+    @property
+    def harness_or_default(self) -> str:
+        """Resolve an omitted backend for a new workflow; a resumed workflow receives its saved choice."""
+        return AgentConfig.harness if self.harness is None else self.harness
 
 
 @dataclass

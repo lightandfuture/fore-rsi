@@ -1000,12 +1000,35 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
+    /// Read the active endpoint's close policy for menu and shortcut targets.
+    pub(super) fn close_is_protected(&self, target: &str) -> bool {
+        self.snapshot
+            .as_deref()
+            .is_some_and(|s| s.protected_close_targets.contains(target))
+    }
+
+    pub(super) fn reject_protected_close(
+        &mut self,
+        target: &str,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        if !self.close_is_protected(target) {
+            return false;
+        }
+        self.set_endpoint_error(crate::app::workflow_panes::CLOSE_MESSAGE);
+        outcome.repaint = true;
+        true
+    }
+
     pub(super) fn request_workspace_close(
         &mut self,
         workspace_id: String,
         close_group: Option<bool>,
         outcome: &mut ClientShellInput,
     ) {
+        if self.reject_protected_close(&workspace_id, outcome) {
+            return;
+        }
         if self.config.confirm_close {
             self.open_close_confirmation(workspace_id, None, close_group);
             return;
@@ -1028,6 +1051,9 @@ impl ClientShellState {
     }
 
     pub(super) fn request_pane_close(&mut self, pane_id: String, outcome: &mut ClientShellInput) {
+        if self.reject_protected_close(&pane_id, outcome) {
+            return;
+        }
         let target = self.snapshot.as_deref().and_then(|snapshot| {
             let pane = snapshot.panes.iter().find(|pane| pane.pane_id == pane_id)?;
             let tab = snapshot
@@ -1062,6 +1088,9 @@ impl ClientShellState {
     }
 
     pub(super) fn request_tab_close(&mut self, tab_id: String, outcome: &mut ClientShellInput) {
+        if self.reject_protected_close(&tab_id, outcome) {
+            return;
+        }
         let workspace_id = self.snapshot.as_deref().and_then(|snapshot| {
             let target = snapshot.tabs.iter().find(|tab| tab.tab_id == tab_id)?;
             (self.config.confirm_close

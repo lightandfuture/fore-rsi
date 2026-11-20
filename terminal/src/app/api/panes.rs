@@ -99,7 +99,8 @@ impl App {
         params: PaneEnsureParams,
     ) -> std::io::Result<PaneInfo> {
         let cwd = params.cwd.into();
-        let argv = (!params.argv.is_empty()).then_some(params.argv.as_slice());
+        let command = crate::app::workflow_panes::launch_argv(Some(&params.key), &params.argv);
+        let argv = (!command.is_empty()).then_some(command.as_ref());
         let (ws_idx, tab_idx) = if let Some(ws_idx) = workspace {
             let (rows, cols) = self.state.new_pane_size(crate::ui::NewPanePlacement::Alone);
             let appearance = self.pane_host_terminal_appearance();
@@ -134,6 +135,9 @@ impl App {
             .terminals
             .get_mut(&tab.panes[&pane_id].attached_terminal_id)
             .expect("new tab should have a registered root terminal");
+        if matches!(command, std::borrow::Cow::Owned(_)) {
+            terminal.launch_argv = Some(params.argv);
+        }
         terminal.managed_key = Some(params.key);
         if let Some(label) = params.label {
             tab.set_custom_name(label.clone());
@@ -1379,8 +1383,8 @@ impl App {
                     self.render_notify.clone(),
                     self.render_dirty.clone(),
                 );
-                self.state.workspaces.push(workspace);
-                let target_ws_idx = self.state.workspaces.len() - 1;
+                let target_ws_idx = self.state.workspaces.len();
+                self.register_workspace(target_ws_idx, workspace);
                 created_workspace = true;
                 created_tab = true;
                 (target_ws_idx, 0, moved_pane_id)
@@ -1519,7 +1523,7 @@ impl App {
             if self.state.selected >= insert_idx && !self.state.workspaces.is_empty() {
                 self.state.selected += 1;
             }
-            self.state.workspaces.insert(insert_idx, workspace);
+            self.register_workspace(insert_idx, workspace);
         }
         self.state.mark_session_dirty();
         self.schedule_session_save();
@@ -2075,6 +2079,51 @@ impl App {
         encode_success(id, ResponseResult::Ok {})
     }
 
+    /// Release a keyed terminal without typing into its current application or closing its successor.
+    pub(super) fn handle_pane_remove(
+        &mut self,
+        id: String,
+        params: crate::api::schema::PaneRemoveParams,
+    ) -> String {
+        let Some(terminal) = self.state.terminals.get(params.terminal_id.as_str()) else {
+            return encode_success(id, ResponseResult::Ok {});
+        };
+        if terminal.managed_key.as_deref() != Some(params.key.as_str()) {
+            return encode_error(
+                id,
+                "pane_key_mismatch",
+                "terminal does not belong to this key",
+            );
+        }
+        let target = match self.resolve_terminal_target(&params.terminal_id) {
+            Ok(target) => target,
+            Err(_) => {
+                return encode_error(
+                    id,
+                    "pane_unavailable",
+                    "terminal is not attached to a unique pane",
+                )
+            }
+        };
+        let (ws, pane) = (target.ws_idx, target.pane_id);
+        if self.state.close_pane_would_close_workspace(ws, pane)
+            && self.state.workspace_close_indices(ws).len() > 1
+        {
+            return encode_error(
+                id,
+                "confirmation_required",
+                "removing this terminal would close other workspaces",
+            );
+        }
+        let public = self
+            .public_pane_id(ws, pane)
+            .expect("resolved pane has a public id");
+        match self.close_resolved_pane(id.clone(), ws, pane, public) {
+            Ok(()) => encode_success(id, ResponseResult::Ok {}),
+            Err(response) => response,
+        }
+    }
+
     pub(super) fn handle_pane_close(&mut self, id: String, target: PaneTarget) -> String {
         match self.close_pane(id.clone(), &target) {
             Ok(()) => encode_success(id, ResponseResult::Ok {}),
@@ -2090,6 +2139,20 @@ impl App {
         let Some(public_pane_id) = self.public_pane_id(ws_idx, pane_id) else {
             return Err(pane_not_found(id, &target.pane_id));
         };
+        if self.protected_close_targets().contains(&public_pane_id) {
+            return Err(crate::app::workflow_panes::close_error(id));
+        }
+        self.close_resolved_pane(id, ws_idx, pane_id, public_pane_id)
+    }
+
+    /// Remove the resolved pane and shut down the terminal runtimes detached by this layout change.
+    fn close_resolved_pane(
+        &mut self,
+        id: String,
+        ws_idx: usize,
+        pane_id: PaneId,
+        public_pane_id: String,
+    ) -> Result<(), String> {
         let workspace_id = self.public_workspace_id(ws_idx);
         let layout_update_target = self.layout_update_target_after_pane_removal(ws_idx, pane_id);
         if self.state.close_pane_would_close_workspace(ws_idx, pane_id) {
@@ -2109,7 +2172,7 @@ impl App {
         let terminal_id = self.state.terminal_id_for_pane(ws_idx, pane_id);
         let should_close_workspace = {
             let Some(ws) = self.state.workspaces.get_mut(ws_idx) else {
-                return Err(pane_not_found(id, &target.pane_id));
+                return Err(pane_not_found(id, &public_pane_id));
             };
             ws.close_pane(pane_id)
         };

@@ -35,10 +35,10 @@ function sendJson(response: ServerResponse, status: number, value: object): void
 }
 
 /** Serve state and native message control for one Pi session. */
-export default function observe(pi: ExtensionAPI): void {
-  const socketFlag = "fore-rsi-observation-socket";
-  const portFlag = "fore-rsi-observation-port";
-  const tokenFlag = "fore-rsi-observation-token";
+export default function serveIpc(pi: ExtensionAPI): void {
+  const socketFlag = "fore-rsi-ipc-socket";
+  const portFlag = "fore-rsi-ipc-port";
+  const tokenFlag = "fore-rsi-ipc-token";
   pi.registerFlag(socketFlag, { type: "string", description: "Private IPC socket for this workflow member" });
   pi.registerFlag(portFlag, { type: "string", description: "Private IPC port for this workflow member" });
   pi.registerFlag(tokenFlag, { type: "string", description: "Private IPC token for this workflow member" });

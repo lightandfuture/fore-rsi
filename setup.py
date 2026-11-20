@@ -59,7 +59,7 @@ setup(
     data_files=[("libexec/fore-rsi", [
         "terminal/src/integration/assets/pi/herdr-agent-state.ts",
         "src/fore_rsi/rsi_workflows/agent_runtimes/pi/tool_mcp.ts",
-        "src/fore_rsi/rsi_workflows/agent_runtimes/pi/observation.ts",
+        "src/fore_rsi/rsi_workflows/agent_runtimes/pi/ipc.ts",
         "src/fore_rsi/rsi_workflows/agent_runtimes/tool_stdio.py",
     ])],
     rust_extensions=[

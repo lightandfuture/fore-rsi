@@ -19,7 +19,7 @@ class PiSessionState(TypedDict):
     effort: ReasoningEffort | None
 
 
-def recorded_observation(path: Path) -> PiSessionState:
+def read_record_file_state(path: Path) -> PiSessionState:
     """Read the selected model and effort from a saved Pi record file."""
     state: PiSessionState = {
         "record_file": str(path),

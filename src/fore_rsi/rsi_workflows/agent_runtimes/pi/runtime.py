@@ -19,7 +19,7 @@ from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeli
 from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
 from fore_rsi.rsi_workflows.agent_runtimes.pi.record_file import (
     PiSessionState,
-    recorded_observation,
+    read_record_file_state,
 )
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
 from fore_rsi.utils.paths import write_private_text
@@ -96,13 +96,13 @@ class PiAgentRuntime(AgentRuntime):
         integrations = terminal_executable().parent
         if not hook.is_file():
             hook = integrations / hook.name
-        native = ["--extension", str(integrations / "observation.ts")]
+        native = ["--extension", str(integrations / "ipc.ts")]
         if "socket_path" in self.ipc_endpoint:
-            native.extend(["--fore-rsi-observation-socket", self.ipc_endpoint["socket_path"]])
+            native.extend(["--fore-rsi-ipc-socket", self.ipc_endpoint["socket_path"]])
         else:
-            native.extend(["--fore-rsi-observation-port", str(self.ipc_endpoint["port"])])
+            native.extend(["--fore-rsi-ipc-port", str(self.ipc_endpoint["port"])])
         native.extend([
-            "--fore-rsi-observation-token", self.ipc_endpoint["token"],
+            "--fore-rsi-ipc-token", self.ipc_endpoint["token"],
             "--extension", str(hook), "--session-dir", str(self.harness_directory),
             "--session", str(self.get_agent_file_path(".jsonl")),
         ])
@@ -172,7 +172,7 @@ class PiAgentRuntime(AgentRuntime):
         """Pair Pi's live session settings with its bound terminal owner."""
         agent = await self.get_agent()
         if agent is None:
-            state = await asyncio.to_thread(recorded_observation, self.get_agent_file_path(".jsonl"))
+            state = await asyncio.to_thread(read_record_file_state, self.get_agent_file_path(".jsonl"))
             return state, "stopped"
         state = await self.live_session_state()
         session = agent.get("agent_session")

@@ -40,7 +40,7 @@ class WorkflowConfig:
     workflow_name: Annotated[str, arg(name="workflow", prefix_name=False)] = "default"
     # Markdown task file.
     task: Annotated[Path | None, arg(prefix_name=False)] = None
-    # Select the native backend. New sessions default to pi; resumed sessions keep their backend.
+    # Select the native backend for this new workflow session.
     harness: Annotated[str | None, arg(prefix_name=False, help_behavior_hint="")] = None
     # Select the entry agent's model. Omit to keep the backend's model selection.
     entry_model: Annotated[str | None, arg(name="model", prefix_name=False, help_behavior_hint="")] = None
@@ -49,7 +49,7 @@ class WorkflowConfig:
 
     @property
     def harness_or_default(self) -> str:
-        """Resolve an omitted backend for a new workflow; a resumed workflow receives its saved choice."""
+        """Resolve the backend for a new workflow session."""
         return AgentConfig.harness if self.harness is None else self.harness
 
 
@@ -80,7 +80,7 @@ class Config:
         user_state_path("fore-rsi", appauthor=False) / "sessions.sqlite3"
     )
 
-    # Run or resume, list, stop, delete a session, or open its work-progress page.
+    # Run a new workflow, list, stop, delete a session, or open its work-progress page.
     session_action: Positional[Literal["run", "list", "stop", "delete", "workprogress"]] = "run"
     # Select the ForeRSI session shared by its workflow and interface.
     session: Annotated[str | None, arg(prefix_name=False)] = None

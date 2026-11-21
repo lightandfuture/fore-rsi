@@ -8,7 +8,7 @@ from inspect import isabstract
 from pathlib import Path
 
 from fore_rsi.config import AgentConfig
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime
+from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import AgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.claude_code import ClaudeCodeAgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.codex import CodexAgentRuntime
 from fore_rsi.rsi_workflows.agent_runtimes.pi import PiAgentRuntime

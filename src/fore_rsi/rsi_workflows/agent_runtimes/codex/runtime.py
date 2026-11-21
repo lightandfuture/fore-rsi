@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from fore_rsi.config import AgentConfig, ReasoningEffort
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
+from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import AgentRuntime, MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.codex.app_server import (
     CodexAppServer,
     PendingCodexTurn,

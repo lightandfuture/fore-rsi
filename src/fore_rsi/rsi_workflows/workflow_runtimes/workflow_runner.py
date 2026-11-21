@@ -37,17 +37,12 @@ class WorkflowRunner:
         self._record_path = self._session_record_path(
             cache_dir / WorkflowConfig.SESSIONS_DIR_NAME, self.session_name
         )
-        try:
-            saved = json.loads(self._record_path.read_bytes())
-        except FileNotFoundError:
-            self.harness = workflow_config.harness_or_default
-        else:
-            # Records predating backend selection were created by Pi workflows.
-            self.harness = saved.get("harness", AgentConfig.harness)
-            if workflow_config.harness is not None and workflow_config.harness != self.harness:
-                raise ValueError(
-                    f"Session {self.session_name!r} uses {self.harness!r}. Choose a new session to change backends."
-                )
+        if self._record_path.exists():
+            raise ValueError(
+                f"Session {self.session_name!r} already exists. "
+                "Workflow resume is not supported yet; choose a new session name."
+            )
+        self.harness = workflow_config.harness_or_default
         self.workflow = workflow_class(
             replace(workflow_config, harness=self.harness), session_directory=self._record_path.parent
         )

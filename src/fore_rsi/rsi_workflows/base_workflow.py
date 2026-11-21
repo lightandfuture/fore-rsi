@@ -8,6 +8,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph
+
 from fore_rsi.config import AgentConfig, WorkflowConfig
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import ToolMcpHost
 from fore_rsi.rsi_workflows.base_agent import AgentState, BaseAgent
@@ -39,10 +42,47 @@ class BaseWorkflow(ABC):
         self.workgroups: dict[str, Workgroup] = {}
         self.global_workgroup = self.create_workgroup(WorkflowConfig.GLOBAL_WORKGROUP_NAME)
 
-    @abstractmethod
     async def run(self, workspace_id: str) -> None:
-        """Execute within the prepared terminal workspace, propagating errors and cancellation."""
+        """Prepare, compile, invoke, and clean up one Workflow execution."""
+        try:
+            workflow = self.build_workflow().compile(checkpointer=InMemorySaver())
+            await workflow.ainvoke(
+                self.prepare_workflow_input(workspace_id),
+                self.workflow_config(),
+            )
+        finally:
+            await self.close_all_agents()
+
+    def build_workflow(self) -> StateGraph:
+        """Create this Workflow's graph from its node and edge declarations."""
+        graph = StateGraph(dict)
+        self.build_workflow_nodes(graph)
+        self.build_workflow_edges(graph)
+        return graph
+
+    @abstractmethod
+    def build_workflow_nodes(self, graph: StateGraph) -> None:
+        """Add this Workflow's nodes to the graph."""
         ...
+
+    @abstractmethod
+    def build_workflow_edges(self, graph: StateGraph) -> None:
+        """Add this Workflow's edges and conditional routes to the graph."""
+        ...
+
+    def prepare_workflow_input(self, workspace_id: str) -> dict[str, object]:
+        """Return the input passed to a newly started Workflow graph."""
+        return {"workspace_id": workspace_id}
+
+    def workflow_config(self) -> dict[str, dict[str, str]]:
+        """Return the checkpointer configuration for this Workflow session."""
+        return {"configurable": {"thread_id": self.session_directory.name}}
+
+    async def close_all_agents(self) -> None:
+        """Close every registered Agent and release its Scheduler reservation."""
+        for workgroup_name, workgroup in tuple(self.workgroups.items()):
+            for agent_name in tuple(workgroup.agents):
+                await self.close_agent(workgroup_name, agent_name)
 
     def create_workgroup(self, workgroup_name: str | None = None) -> Workgroup:
         """Create an empty Workgroup with an explicit or workflow-assigned name."""

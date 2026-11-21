@@ -1,0 +1,13 @@
+{
+  "name": "fore-rsi-pi-extensions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3"
+  }
+}

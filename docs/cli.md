@@ -21,7 +21,7 @@ This example uses the task file from the ForeRSI repository root. All startup op
 - `--task FILE` provides a Markdown task file. Omit it to describe the task in the conversation.
 - `--cache-dir PATH` chooses workflow storage for a new session (default: `./cache`). Relative paths use the current project's Git repository root, or the startup directory outside Git; absolute paths are used directly. Workflow data is stored in its `workflows/` subdirectory. Each session name keeps its original storage location for the current user, even when started again from another directory.
 
-Quote values containing spaces. Relative task paths are relative to the working directory. To change a requirement, tell the Coordinator in the same conversation. Each change is saved as a new task revision with its own file; earlier revisions stay readable and the session resumes from the latest one.
+Quote values containing spaces. Relative task paths are relative to the working directory. To change a requirement, tell the Coordinator in the same conversation. Each change is saved as a new task revision with its own file; previously submitted task versions stay readable and a resumed session uses the latest one.
 
 To resume, use the same `--session` name without resubmitting `--task`. Each agent reopens its own native conversation under `<cache-dir>/workflows/<session>/harnesses/`. To switch backends, start a new named session. See [Exit and resume](../README.md#exit-and-resume) for the exit shortcut.
 
@@ -111,7 +111,7 @@ fore-rsi --session sglang-throughput \
 - `--task FILE` 提供 Markdown 任务文件。省略时，在对话中直接描述任务。
 - `--cache-dir PATH` 指定新会话的工作流存储目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流数据保存在其中的 `workflows/` 子目录。当前用户的每个会话名称绑定首次确定的存储位置，之后即使换目录启动，也沿用原位置。
 
-值中有空格时加引号。任务文件的相对路径以工作目录为基准。要调整要求，直接在原对话中告诉协调者即可。发生变化的任务会保存为新的版本文件；旧版仍可查阅，恢复会话时使用最新版。
+值中有空格时加引号。任务文件的相对路径以工作目录为基准。要调整要求，直接在原对话中告诉协调者即可。发生变化的任务会保存为新的版本文件；之前提交的任务版本仍可查阅，恢复会话时使用最新版本。
 
 恢复时使用相同的 `--session` 名称，无需重复提交 `--task`。每个 Agent 都会从 `<cache-dir>/workflows/<session>/harnesses/` 下打开自己的原生对话记录。要换后端，请另起一个会话名。退出快捷键见[退出与恢复](../README_zh.md#退出与恢复)。
 

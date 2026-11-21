@@ -3,7 +3,6 @@
 
 """Accept task submissions from the Coordinator and keep a revision history for each workflow session."""
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,9 +65,9 @@ class Task:
     """Own task revisions for one workflow session."""
 
     def __init__(self, session_directory: Path) -> None:
-        """Restore task history for one workflow session."""
+        """Create task history state for one new workflow session."""
         self.session_directory = session_directory
-        self.current_task: TaskRevision | None = self.read_latest_task_revision()
+        self.current_task: TaskRevision | None = None
 
     def publish_task(self, workflow_state: Mapping[str, object]) -> dict[str, object]:
         """Persist the submitted task and return revision data to the graph."""
@@ -96,29 +95,6 @@ class Task:
             "task_revision_file": str(task_revision.revision_file_path),
             "is_first_task_submission": is_first_task_submission,
         }
-
-    def read_latest_task_revision(self) -> TaskRevision | None:
-        """Read the newest published TaskRevision from the session directory."""
-        # Task owns this filename pattern, so the numeric suffix is the revision sort key.
-        latest_revision_file = max(
-            self.session_directory.glob("task_revision_*.json"),
-            key=lambda path: int(path.stem.removeprefix("task_revision_")),
-            default=None,
-        )
-        if latest_revision_file is None:
-            return None
-        revision_number = int(
-            latest_revision_file.stem.removeprefix("task_revision_")
-        )
-        # Convert persisted JSON into the validated domain object used by the workflow.
-        task_submission = TaskSubmission.model_validate(
-            json.loads(latest_revision_file.read_bytes())
-        )
-        return TaskRevision(
-            revision_number=revision_number,
-            revision_file_path=latest_revision_file,
-            task_submission=task_submission,
-        )
 
     def write_task_revision(
         self, revision_number: int, task_submission: TaskSubmission

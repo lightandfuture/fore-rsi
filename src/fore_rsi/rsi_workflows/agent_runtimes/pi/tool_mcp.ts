@@ -19,7 +19,9 @@ export default function registerToolMcp(pi: ExtensionAPI): void {
     try {
       url = readFileSync(file, "utf8").trim();
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const code =
+        error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code !== "ENOENT") throw error;
     }
     if (url === registered) return;
     if (url === undefined) {

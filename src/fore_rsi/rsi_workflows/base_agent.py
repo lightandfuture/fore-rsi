@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes import AgentTool, create_agent_runtime
-from fore_rsi.rsi_workflows.agent_runtimes.base import MessageDeliveryMode
+from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import MessageDeliveryMode
 from fore_rsi.rsi_workflows.workgroup import Workgroup
 
 if TYPE_CHECKING:

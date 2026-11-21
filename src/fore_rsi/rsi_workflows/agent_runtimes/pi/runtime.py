@@ -14,7 +14,7 @@ from typing import NotRequired, TypedDict
 import httpx2
 
 from fore_rsi.config import AgentConfig
-from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
+from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import AgentRuntime, MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
 from fore_rsi.rsi_workflows.agent_runtimes.pi.record_file import (
     PiLiveSessionState,

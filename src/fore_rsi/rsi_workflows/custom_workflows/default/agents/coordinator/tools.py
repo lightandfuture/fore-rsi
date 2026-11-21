@@ -16,10 +16,11 @@ def bind_submit_task(
     """Bind the tool to this session's task operation, keeping that dependency out of the MCP schema."""
 
     async def submit_task(task_submission: TaskSubmission) -> dict[str, object]:
-        """Convert the user's requirements into a complete task declaration for the team.
+        """Convert the user's requirements into a complete and accurate task declaration for the team.
 
-        Make reasonable assumptions and fill optional details from the available context. Ask for clarification only
-        when ambiguity would materially change the goal, evaluation, safety, or resource budget. Include the goal,
+        Preserve every known requirement. Make reasonable assumptions and fill optional details from the available
+        context. Ask for clarification only when ambiguity would materially change the goal, evaluation, safety, or
+        resource budget. Include the goal,
         constraints, agent_team allocations,
         environment_variables as name/value pairs, and task_comments when known. Keep credentials in the host
         environment instead of the task declaration. In constraints, preserve common_constraints, resources,
@@ -30,7 +31,12 @@ def bind_submit_task(
         try:
             await submit_task_operation(task_submission)
         except ValueError as validation_error:
-            raise ToolError(str(validation_error)) from validation_error
+            raise ToolError(
+                f"Task declaration was not accepted. Missing or invalid fields: {validation_error} "
+                "Add every field named in the error, then call submit_task again with a complete "
+                "and accurate declaration. Preserve every known requirement, use registered "
+                "roles and valid model/effort/quota values, and do not add revision or next-stage fields."
+            ) from validation_error
         return {"task_submission_queued": True}
 
     return submit_task

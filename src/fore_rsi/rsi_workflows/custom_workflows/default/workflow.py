@@ -213,24 +213,24 @@ class DefaultWorkflow(BaseWorkflow):
         """Declare Explorer baseline setup before the active Explorer slots are filled."""
         # Initial Explorer bootstrap; the Verifier bootstrap is an independent outer branch.
         #
-        # START
-        #   |
-        # create_initial_explorer
-        #   |
-        # study_initial_context
-        #   |
-        # wait_for_stage_completion -> route_stage_completion
-        #   |                              |
-        #   |              +---------------+--------------------+
-        #   |              |                                    |
-        #   |       define_initial_baseline             define_baseline_experiment
-        #   |              |                                    |
-        #   +--------------+---------- wait_for_stage_completion+
-        #                                  |
+        # START -> create_initial_explorer -> study_initial_context
+        #                                      |
+        #                              wait_for_stage_completion
+        #                                      |
+        #                              route_stage_completion
+        #                                      |
+        #                    +-----------------+------------------+
+        #                    |                                    |
+        #         define_initial_baseline             define_baseline_experiment
+        #                    |                                    |
+        #                    +--------> wait_for_stage_completion
+        #                                      |
+        #                              route_stage_completion
+        #                                      |
         #                    register_baseline_candidate
-        #                                  |
-        #                         fill_explorer_slots
-        #                                  |
+        #                                      |
+        #                             fill_explorer_slots
+        #                                      |
         #                    exploration_bootstrap_ready -> END
         #
         # fill_explorer_slots starts independent Explorer work items; it does not wait for Verifier.
@@ -348,6 +348,41 @@ class DefaultWorkflow(BaseWorkflow):
 
     def build_exploration_workflow(self) -> StateGraph:
         """Declare one dynamic Explorer work item from slot admission to Proposal handoff."""
+        # One graph instance represents one Explorer work item; dispatch_explorer_work can create
+        # many instances for the configured active slots.
+        #
+        # START -> dispatch_explorer_work -> explore_direction
+        #                                      |
+        #                              wait_for_stage_completion
+        #                                      |
+        #                              route_stage_completion
+        #                                      |
+        #                                create_checker
+        #                                      |
+        #                                check_exploration
+        #                                      |
+        #                              wait_for_stage_completion
+        #                                      |
+        #                            route_exploration_decision
+        #                         +------------+-------------+
+        #                         |                          |
+        #                 continue_exploration          create_proposal
+        #                         |                          |
+        #                  explore_direction       wait -> check_proposal
+        #                                                        |
+        #                                              wait -> route_proposal_decision
+        #                                                +-----+------+------+
+        #                                                |            |      |
+        #                                           revise       publish   request_experiment
+        #                                                |            |      |
+        #                                         explore_direction  queue_*_request
+        #                                                             |
+        #                                                   release_explorer_slot
+        #                                                             |
+        #                                                       suspend_explorer -> END
+        #
+        # finish_exploration -> retire_explorer -> END.
+        # The shared wait node advances only after the current stage's completion tool.
         workflow = StateGraph(dict)
         for node_name in (
             "dispatch_explorer_work",
@@ -425,6 +460,28 @@ class DefaultWorkflow(BaseWorkflow):
 
     def build_work_workflow(self) -> StateGraph:
         """Declare one Worker work item from Proposal admission to Candidate handoff."""
+        # Worker path:
+        #
+        # START -> dispatch_worker_work -> receive_proposal -> implement_candidate
+        #                                                        |
+        #                                                wait_for_stage_completion
+        #                                                        |
+        #                                                check_implementation
+        #                                                        |
+        #                                                wait_for_stage_completion
+        #                                                        |
+        #                                             route_implementation_decision
+        #                                         +----------+-----------+-----------+
+        #                                         |                      |           |
+        #                                  revise_implementation  publish_candidate  return_to_explorer
+        #                                         |                      |           |
+        #                                  implement_candidate  queue_experiment  release_worker_slot
+        #                                                                |           |
+        #                                                         release_worker_slot
+        #                                                                |
+        #                                                               END
+        #
+        # request_experiment follows the same queue_experiment -> release path as publish_candidate.
         workflow = StateGraph(dict)
         for node_name in (
             "dispatch_worker_work",
@@ -477,6 +534,27 @@ class DefaultWorkflow(BaseWorkflow):
 
     def build_experiment_workflow(self) -> StateGraph:
         """Declare Verifier admission, experiment execution, result recording, and feedback."""
+        # Experiment path:
+        #
+        # START -> dispatch_experiment_work -> wait_for_verifier_slot
+        #          -> create_or_resume_verifier -> prepare_experiment
+        #          -> wait_for_experiment_resources -> run_experiment
+        #          -> wait_for_stage_completion -> verify_result
+        #          -> wait_for_stage_completion -> route_verification_decision
+        #                                  +-------------+----------------+
+        #                                  |             |                |
+        #                          retry_experiment  publish_result  return_feedback
+        #                                  |             |                |
+        #                           prepare_experiment |         publish_feedback
+        #                                                |
+        #                                       record_experiment_result
+        #                                                |
+        #                                        publish_report
+        #                                           +----+----+
+        #                                                |
+        #                                   release_verifier_slot -> END
+        #
+        # Requests wait for a Verifier slot or experiment resources without blocking Explorers.
         workflow = StateGraph(dict)
         for node_name in (
             "dispatch_experiment_work",
@@ -534,6 +612,20 @@ class DefaultWorkflow(BaseWorkflow):
 
     def build_watchdog_workflow(self) -> StateGraph:
         """Declare periodic Watchdog review, reminders, and progress publication."""
+        # Watchdog is a side flow triggered by timer or progress events:
+        #
+        # START -> create_watchdog -> collect_progress -> review_progress
+        #                                      |
+        #                              wait_for_stage_completion
+        #                                      |
+        #                              route_watchdog_decision
+        #                         +------------+-------------+
+        #                         |                          |
+        #                  continue_watchdog            send_reminders
+        #                         |                          |
+        #                  collect_progress             collect_progress
+        #
+        # publish_watchdog_report -> END; reminders never complete a business stage directly.
         workflow = StateGraph(dict)
         for node_name in (
             "create_watchdog",

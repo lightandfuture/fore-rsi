@@ -3,25 +3,72 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 #}
 
-{% if task is defined %}
-## Task objective
-{{ task.description }}
+{% if task_revision is defined %}
+## Task revision {{ task_revision.revision_number }}
 
-{% if task.deliverables %}
-## Deliverables and acceptance criteria
-- {{ task.deliverables | join('\n- ') }}
+### Objective
+{{ task_revision.task_submission.goal }}
+
+{% set submission = task_revision.task_submission %}
+{% if submission.constraints.common_constraints %}
+### Constraints
+{% for name, value in submission.constraints.common_constraints.items() %}
+- {{ name }}: {{ value }}
+{% endfor %}
 {% endif %}
-{% if task.constraints %}
-## Constraints
-- {{ task.constraints | join('\n- ') }}
+
+{% if submission.constraints.resources.deployment_resources or submission.constraints.resources.experiment_resources %}
+### Authorized resources
+{% if submission.constraints.resources.deployment_resources %}
+- Deployment: {{ submission.constraints.resources.deployment_resources }}
 {% endif %}
-{% if task.resources %}
-## Authorized resources and limits
-- {{ task.resources | join('\n- ') }}
+{% if submission.constraints.resources.experiment_resources %}
+- Experiments: {{ submission.constraints.resources.experiment_resources }}
 {% endif %}
-{% if task.time_budget_seconds is not none %}
-Total task time budget: {{ task.time_budget_seconds }} seconds.
+{% endif %}
+
+{% if submission.constraints.stop_conditions %}
+### Stop conditions
+{% for condition in submission.constraints.stop_conditions %}
+- {{ condition }}
+{% endfor %}
+{% endif %}
+
+{% if submission.constraints.time_budget is not none %}
+### Time budget
+{{ submission.constraints.time_budget }} seconds.
+{% endif %}
+
+{% if submission.agent_team.roles %}
+### Agent team
+{% for role, allocations in submission.agent_team.roles.items() %}
+- {{ role }}:
+{% for allocation in allocations %}
+  - model: {{ allocation.model }}, effort: {{ allocation.effort }}, quota: {{ allocation.quota }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+{% if submission.agent_team.team_comments %}
+### Team comments
+{% for comment in submission.agent_team.team_comments %}
+- {{ comment }}
+{% endfor %}
+{% endif %}
+
+{% if submission.environment_variables %}
+### Environment variables
+{% for name, value in submission.environment_variables.items() %}
+- {{ name }}={{ value }}
+{% endfor %}
+{% endif %}
+
+{% if submission.task_comments %}
+### Task comments
+{% for comment in submission.task_comments %}
+- {{ comment }}
+{% endfor %}
 {% endif %}
 {% else %}
-Read the task declaration for the objective, deliverables and acceptance criteria, constraints, authorized resources and limits, and total task time budget.
+Read the task declaration for the objective, constraints, authorized resources, stop conditions, time budget, agent-team allocations, environment variables, and task comments.
 {% endif %}

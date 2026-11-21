@@ -16,13 +16,16 @@ def bind_submit_task(
     """Bind the tool to this session's task operation, keeping that dependency out of the MCP schema."""
 
     async def submit_task(task_submission: TaskSubmission) -> dict[str, object]:
-        """Submit the complete task agreed with the user and return the saved revision and its file.
+        """Convert the user's requirements into a complete task declaration for the team.
 
-        Include the goal, constraints, agent_team allocations, environment_variables as name/value pairs, and
-        task_comments when known. Keep credentials in the host environment instead of the task submission. In
-        constraints, preserve common_constraints, resources, stop_conditions, and time_budget. In agent_team,
-        declare each role's model, effort, and quota. For updates, submit the complete current task again and
-        retain unchanged requirements.
+        Make reasonable assumptions and fill optional details from the available context. Ask for clarification only
+        when ambiguity would materially change the goal, evaluation, safety, or resource budget. Include the goal,
+        constraints, agent_team allocations,
+        environment_variables as name/value pairs, and task_comments when known. Keep credentials in the host
+        environment instead of the task declaration. In constraints, preserve common_constraints, resources,
+        stop_conditions, and time_budget. In agent_team, declare each role's model, effort, and quota. For updates,
+        provide the complete current task again and retain unchanged requirements. The Workflow assigns the revision
+        number and persists the accepted declaration.
         """
         try:
             await submit_task_operation(task_submission)

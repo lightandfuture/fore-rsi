@@ -66,7 +66,10 @@ class ExplorerAgent(BaseAgent):
                 ExplorerAgent.common_user_prompt_path,
                 ExplorerAgent.study_initial_context_prompt_path,
             ],
-            {"task_revision_file": workflow_state["task_revision_file"]},
+            {
+                "task_revision_number": workflow_state["task_revision_number"],
+                "task_revision_file": workflow_state["task_revision_file"],
+            },
             section_transition="Here are the Explorer's instructions for this workflow stage.",
         )
         await explorer.send_message(user_prompt, mode="queue")

@@ -3,7 +3,7 @@
 
 """Run one workflow member in the Codex terminal lifecycle."""
 
-import asyncio
+from collections import deque
 import json
 import os
 from collections.abc import Sequence
@@ -11,6 +11,10 @@ from pathlib import Path
 
 from fore_rsi.config import AgentConfig, ReasoningEffort
 from fore_rsi.rsi_workflows.agent_runtimes.base import AgentRuntime, MessageDeliveryMode
+from fore_rsi.rsi_workflows.agent_runtimes.codex.app_server import (
+    CodexAppServer,
+    PendingCodexTurn,
+)
 from fore_rsi.rsi_workflows.agent_runtimes.codex.record_file import (
     get_codex_thread,
     link_profile_sessions,
@@ -48,18 +52,16 @@ class CodexAgentRuntime(AgentRuntime):
         self.pending_message_count = 0
         self.settle_completion_seq: int | None = None
         self.settle_state_change_seq = 0
+        self.app_server: CodexAppServer | None = None
+        self.pending_app_turns: deque[PendingCodexTurn] = deque()
 
     async def send_message(
         self,
         message: str,
         mode: MessageDeliveryMode = "queue",
     ) -> None:
-        """Submit a Codex message and record the Terminal completion baseline."""
-        if mode == "steer":
-            raise NotImplementedError(
-                "Codex does not expose a documented programmatic checkpoint-steer command."
-            )
-        if mode != "queue":
+        """Submit a Codex queue or steer message through the app-server control channel."""
+        if mode not in {"queue", "steer"}:
             raise ValueError(f"Unsupported Codex message delivery mode: {mode!r}")
         if self.terminal_id is None:
             raise RuntimeError("Start the Codex member before sending a message.")
@@ -69,30 +71,43 @@ class CodexAgentRuntime(AgentRuntime):
             agent = await self.get_agent()
             if agent is None:
                 raise RuntimeError("The Codex member is no longer running.")
-            if self.pending_message_count == 0:
-                completion_seq = agent.get("completion_seq")
-                state_change_seq = agent.get("state_change_seq")
-                self.settle_completion_seq = (
-                    completion_seq if type(completion_seq) is int else None
-                )
-                self.settle_state_change_seq = (
-                    state_change_seq if type(state_change_seq) is int else 0
-                )
-            self.pending_message_count += 1
-            try:
-                if thread is None:
-                    await self.submit_initial_prompt(message)
-                else:
-                    await self.queue_codex_message(thread, message)
-            except BaseException:
-                self.pending_message_count -= 1
+            if thread is None:
+                if mode == "steer":
+                    raise RuntimeError("Codex has no active thread to steer.")
                 if self.pending_message_count == 0:
-                    self.settle_completion_seq = None
-                    self.settle_state_change_seq = 0
-                raise
+                    completion_seq = agent.get("completion_seq")
+                    state_change_seq = agent.get("state_change_seq")
+                    self.settle_completion_seq = (
+                        completion_seq if type(completion_seq) is int else None
+                    )
+                    self.settle_state_change_seq = (
+                        state_change_seq if type(state_change_seq) is int else 0
+                    )
+                self.pending_message_count += 1
+                try:
+                    await self.submit_initial_prompt(message)
+                except BaseException:
+                    self.pending_message_count -= 1
+                    if self.pending_message_count == 0:
+                        self.settle_completion_seq = None
+                        self.settle_state_change_seq = 0
+                    raise
+                return
+
+            app_server = await self.get_app_server()
+            self.pending_app_turns.append(
+                await app_server.submit_message(thread, message, mode)
+            )
 
     async def wait_for_settle(self) -> None:
-        """Wait for one queued Codex turn to produce a new Terminal completion."""
+        """Wait for the submitted Codex turn to complete through app-server events."""
+        if self.pending_app_turns:
+            if self.app_server is None:
+                raise RuntimeError("Codex app-server control is not running.")
+            pending_turn = self.pending_app_turns[0]
+            await self.app_server.wait_for_turn(pending_turn)
+            self.pending_app_turns.popleft()
+            return
         if self.pending_message_count == 0:
             raise RuntimeError("Submit a Codex message before waiting for settle.")
         try:
@@ -102,14 +117,14 @@ class CodexAgentRuntime(AgentRuntime):
                 self.settle_state_change_seq = self.read_state_change_seq(agent)
                 return
             if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked before completing the queued message.")
+                raise RuntimeError("Codex is blocked before completing the submitted message.")
 
             agent = await self.wait_for_agent_status("working", "blocked")
             if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked while processing the queued message.")
+                raise RuntimeError("Codex is blocked while processing the submitted message.")
             agent = await self.wait_for_agent_status("idle", "done", "blocked")
             if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked before completing the queued message.")
+                raise RuntimeError("Codex is blocked before completing the submitted message.")
             if not self.completion_observed(agent):
                 raise RuntimeError("Codex settled without a new completion transition.")
             self.settle_completion_seq = self.read_completion_seq(agent)
@@ -125,8 +140,15 @@ class CodexAgentRuntime(AgentRuntime):
         self.pending_message_count = 0
         self.settle_completion_seq = None
         self.settle_state_change_seq = 0
+        self.pending_app_turns.clear()
+        app_server = self.app_server
+        self.app_server = None
         was_bound = self.terminal_id is not None
-        await super().close()
+        try:
+            if app_server is not None:
+                await app_server.close()
+        finally:
+            await super().close()
         if was_bound:
             member = self.get_agent_file_path("")
             get_codex_thread(
@@ -190,6 +212,8 @@ class CodexAgentRuntime(AgentRuntime):
 
         command = [
             str(executable),
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--dangerously-bypass-hook-trust",
             "-c",
             f"sqlite_home={json.dumps(str(profile), ensure_ascii=False)}",
             *options,
@@ -238,41 +262,13 @@ class CodexAgentRuntime(AgentRuntime):
             self.harness_directory / "sessions" / member.name,
         )
 
-    async def queue_codex_message(self, thread: str, message: str) -> None:
-        """Queue one message through Codex's documented session command."""
-        profile = self.profile_directory()
-        command = [
-            str(await self.ensure_installed()),
-            "queue",
-            "-c",
-            f"sqlite_home={json.dumps(str(profile), ensure_ascii=False)}",
-            "--thread",
-            thread,
-            "--message",
-            message,
-        ]
-        await self.run_codex_command(command, profile)
-
-    async def run_codex_command(self, command: list[str], profile: Path) -> None:
-        """Run one Codex control command outside the managed pane."""
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=Path.cwd(),
-            env={**os.environ, "CODEX_HOME": str(profile)},
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            _, stderr = await process.communicate()
-        except asyncio.CancelledError:
-            if process.returncode is None:
-                process.kill()
-            await process.communicate()
-            raise
-        if process.returncode != 0:
-            details = (stderr or b"").decode("utf-8", errors="replace").strip()
-            raise RuntimeError(f"Codex command failed: {details or process.returncode}")
+    async def get_app_server(self) -> CodexAppServer:
+        """Start or reuse the control client for this member's Codex profile."""
+        if self.app_server is None:
+            executable = await self.ensure_installed()
+            self.app_server = CodexAppServer(self.profile_directory(), executable)
+        await self.app_server.connect()
+        return self.app_server
 
     async def wait_for_agent_status(self, *statuses: str) -> dict[str, object]:
         """Wait for one Terminal agent state and return the observed agent record."""

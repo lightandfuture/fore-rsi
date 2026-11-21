@@ -59,20 +59,29 @@ def get_codex_thread(record: Path, sessions: Path) -> str | None:
         return str(UUID(record.read_text(encoding="utf-8").strip()))
 
     roots: set[str] = set()
-    for path in sessions.glob("*/*/*/rollout-*.jsonl"):
+    for path in sorted(sessions.rglob("rollout-*.jsonl")):
         with path.open(encoding="utf-8") as stream:
-            line = stream.readline()
-        if not line:
-            continue
-        first = json.loads(line)
-        metadata = first.get("payload", {})
-        if (
-            first.get("type") == "session_meta"
-            and metadata.get("source") == "cli"
-            and not metadata.get("forked_from_id")
-            and not metadata.get("parent_thread_id")
-        ):
-            roots.add(str(UUID(metadata["id"])))
+            for line in stream:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("type") != "session_meta":
+                    continue
+                metadata = entry.get("payload", {})
+                if (
+                    isinstance(metadata, dict)
+                    and metadata.get("id")
+                    and not metadata.get("forked_from_id")
+                    and not metadata.get("parent_thread_id")
+                ):
+                    try:
+                        roots.add(str(UUID(metadata["id"])))
+                    except (TypeError, ValueError):
+                        pass
+                break
 
     if len(roots) > 1:
         raise RuntimeError(f"Cannot identify one root Codex conversation in {sessions}.")

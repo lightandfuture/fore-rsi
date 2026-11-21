@@ -7,7 +7,6 @@ import asyncio
 from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
-from typing import cast
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -385,40 +384,8 @@ class DefaultWorkflow(BaseWorkflow):
     async def wait_for_task_submission(
         self, workflow_state: Mapping[str, object]
     ) -> dict[str, object]:
-        """Wait for Coordinator submission, retrying a startup prompt when its turn settles early."""
-        prompt = workflow_state.get("coordinator_prompt")
-        if not isinstance(prompt, str):
-            return {
-                "coordinator_prompt": None,
-                "task_submission": await self.task_submission_queue.get(),
-            }
-
-        coordinator = cast(CoordinatorAgent, workflow_state["agent"])
-        for attempt in range(3):
-            submission = asyncio.create_task(self.task_submission_queue.get())
-            settled = asyncio.create_task(coordinator.agent_runtime.wait_for_settle())
-            done, _ = await asyncio.wait(
-                {submission, settled},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if submission in done:
-                settled.cancel()
-                await asyncio.gather(settled, return_exceptions=True)
-                return {
-                    "coordinator_prompt": None,
-                    "task_submission": submission.result(),
-                }
-
-            submission.cancel()
-            await asyncio.gather(submission, return_exceptions=True)
-            settled.result()
-            if attempt == 2:
-                raise RuntimeError(
-                    "The Coordinator completed three prompt attempts without calling submit_task."
-                )
-            await coordinator.send_message(prompt, mode="queue")
-
-        raise RuntimeError("Coordinator prompt retry loop ended without a result.")
+        """Wait for and consume the next Coordinator task submission."""
+        return {"task_submission": await self.task_submission_queue.get()}
 
     async def enqueue_task_submission(self, task_submission: TaskSubmission) -> None:
         """Queue a Coordinator task submission for the next workflow boundary."""

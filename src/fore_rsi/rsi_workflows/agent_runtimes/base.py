@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Common lifecycle and input operations for one native agent conversation."""
+"""Common lifecycle and input operations for one harness-managed agent conversation."""
 
 import asyncio
 import json
@@ -30,11 +30,11 @@ type MessageDeliveryMode = Literal["queue", "steer"]
 
 
 class AgentRuntime(ABC):
-    """Run and control one native agent for a workflow runner.
+    """Run and control one harness-managed agent for a workflow runner.
 
-    Implementations bind configuration, tools, and native conversation references
-    during construction, then acquire execution resources in start(). The native
-    harness owns authentication and conversation storage.
+    Implementations bind configuration, tools, and conversation references during
+    construction, then acquire execution resources in start(). The harness owns
+    authentication and conversation storage.
     """
 
     harness_name: ClassVar[str]
@@ -49,7 +49,7 @@ class AgentRuntime(ABC):
         tool_mcp_host: ToolMcpHost,
         tools: Sequence[AgentTool] = (),
     ) -> None:
-        """Bind member identity, tools and storage without starting native resources."""
+        """Bind member identity, tools and storage without starting harness resources."""
         self.workgroup_name = workgroup_name
         self.agent_name = agent_name
         self.pane_key = f"fore-rsi.agent/{quote(workgroup_name, safe='')}/{quote(agent_name, safe='')}"
@@ -73,7 +73,7 @@ class AgentRuntime(ABC):
         is_entry: bool = False,
         system_prompt: str | None = None,
     ) -> None:
-        """Bind the agent's pane and navigation identity, then start or attach the native CLI."""
+        """Bind the agent's pane and navigation identity, then start or attach the selected CLI."""
         async with self.lifecycle:
             if self.terminal_id is not None:
                 raise RuntimeError("This runtime already controls a terminal.")
@@ -126,16 +126,16 @@ class AgentRuntime(ABC):
         message: str,
         mode: MessageDeliveryMode = "queue",
     ) -> None:
-        """Deliver a prompt through the harness's native queue or steering interface."""
+        """Deliver a prompt through the harness's queue or steering interface."""
         ...
 
     @abstractmethod
     async def wait_for_settle(self) -> None:
-        """Wait until this harness's current native attempt has settled."""
+        """Wait until this harness's current attempt has settled."""
         ...
 
     async def close(self) -> None:
-        """Stop this agent and remove its tool endpoint, preserving the native conversation."""
+        """Stop this agent and remove its tool endpoint, preserving the conversation."""
         async with self.lifecycle, self.message_lock:
             try:
                 await self.remove_failed_pane()
@@ -146,10 +146,10 @@ class AgentRuntime(ABC):
 
     @classmethod
     def remove_workflow_storage(cls, workflow_directory: Path) -> None:
-        """Remove native links that still refer to a deleted workflow directory."""
+        """Remove links that still refer to a deleted workflow directory."""
 
     def launch_environment(self) -> Mapping[str, str]:
-        """Return environment variables that the terminal must preserve for this native process."""
+        """Return environment variables that the terminal must preserve for this agent process."""
         return {}
 
     def tool_stdio_server(self) -> dict[str, object]:
@@ -163,7 +163,7 @@ class AgentRuntime(ABC):
     @classmethod
     @abstractmethod
     async def ensure_installed(cls) -> Path:
-        """Return the native CLI launcher, preparing a missing installation for startup callers."""
+        """Return the selected CLI launcher, preparing it when missing."""
         ...
 
     @abstractmethod
@@ -180,7 +180,7 @@ class AgentRuntime(ABC):
 
     @abstractmethod
     def tool_mcp_args(self) -> list[str]:
-        """Return native CLI arguments for connecting to this member's tools via its address file."""
+        """Return CLI arguments for connecting to this member's tools via its address file."""
         ...
 
     async def remove_failed_pane(self) -> None:
@@ -224,7 +224,7 @@ class AgentRuntime(ABC):
         command: Sequence[str],
         is_entry: bool,
     ) -> dict[str, object]:
-        """Start the native CLI in a prepared pane and bind its Runtime identity."""
+        """Start the selected CLI in a prepared pane and bind its Runtime identity."""
         terminal_session_name = self.terminal_session_name
         target = pane["terminal_id"]
         result = await run_terminal(
@@ -244,7 +244,7 @@ class AgentRuntime(ABC):
         return json.loads(result.stdout)["result"]["agent"]
 
     async def wait_for_agent_ready(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
-        """Wait for the terminal's readiness event before accepting native input."""
+        """Wait for the terminal's readiness event before accepting agent input."""
         target = pane["terminal_id"]
         result = await run_terminal(
             ["agent", "wait", target, "--until-ready", "--timeout", "30000"],
@@ -272,7 +272,7 @@ class AgentRuntime(ABC):
         )
 
     async def get_agent(self) -> dict | None:
-        """Return the live terminal record only while the bound identity, alias and native editor still match."""
+        """Return the live terminal record while the bound identity and agent still match."""
         if self.terminal_id is None:
             return None
         result = await run_terminal(["agent", "list"], self.terminal_session_name, capture_output=True)

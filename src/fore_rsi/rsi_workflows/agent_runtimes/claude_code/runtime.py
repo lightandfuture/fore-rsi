@@ -17,29 +17,29 @@ from fore_rsi.utils.paths import write_private_text
 
 
 def get_claude_project_link(home: Path, conversation: str) -> Path:
-    """Return the stable native project alias for one Claude Code conversation."""
+    """Return the stable project alias for one Claude Code conversation."""
     return home / "projects" / f"fore-rsi-{UUID(conversation)}"
 
 
-def link_native_directory(link: Path, target: Path) -> None:
-    """Expose a workflow-owned Claude project without replacing an existing native directory."""
+def link_project_directory(link: Path, target: Path) -> None:
+    """Expose a workflow-owned Claude project without replacing an existing project directory."""
     target.mkdir(mode=0o700, parents=True, exist_ok=True)
     link.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         link.symlink_to(target, target_is_directory=True)
     except FileExistsError:
         if not link.is_symlink() or link.resolve() != target.resolve():
-            raise RuntimeError(f"Native Claude project directory is already in use: {link}") from None
+            raise RuntimeError(f"Claude project directory is already in use: {link}") from None
 
 
-def remove_native_link(link: Path, target: Path) -> None:
+def remove_project_link(link: Path, target: Path) -> None:
     """Remove only the Claude project link still owned by this workflow member."""
     if link.is_symlink() and link.resolve() == target.resolve():
         link.unlink()
 
 
 def prepare_claude_session(member: Path, home: Path) -> tuple[str, str, str]:
-    """Bind one persistent conversation UUID to its native Claude project alias."""
+    """Bind one persistent conversation UUID to its Claude project alias."""
     record = member.with_suffix(".session")
     project_directory = member.parent / "projects" / "agents" / member.name
     try:
@@ -51,13 +51,13 @@ def prepare_claude_session(member: Path, home: Path) -> tuple[str, str, str]:
     previous_home = binding["home"]
     if previous_home != str(home):
         if previous_home is not None:
-            remove_native_link(
+            remove_project_link(
                 get_claude_project_link(Path(previous_home), conversation), project_directory
             )
         write_private_text(record, json.dumps({"id": conversation, "home": str(home)}))
 
     project_link = get_claude_project_link(home, conversation)
-    link_native_directory(project_link, project_directory)
+    link_project_directory(project_link, project_directory)
     flag = "--resume" if (project_directory / f"{conversation}.jsonl").is_file() else "--session-id"
     return project_link.name, flag, conversation
 
@@ -77,7 +77,7 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         tool_mcp_host: ToolMcpHost,
         tools: Sequence[AgentTool] = (),
     ) -> None:
-        """Create a Claude Code runtime without starting its native process."""
+        """Create a Claude Code runtime without starting its agent process."""
         super().__init__(
             agent_config,
             workflow_directory,
@@ -98,7 +98,7 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         """Prepare Claude Code's persistent conversation, prompt, model, and tool arguments."""
         self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         project_name, session_flag, conversation = prepare_claude_session(
-            self.get_agent_file_path(""), self.native_home()
+            self.get_agent_file_path(""), self.profile_directory()
         )
         self.claude_project_name = project_name
 
@@ -118,7 +118,7 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         )
 
     def launch_environment(self) -> dict[str, str]:
-        """Keep Claude Code's project alias with the pane so native restore finds this member's history."""
+        """Keep Claude Code's project alias with the pane so restore finds this member's history."""
         if self.claude_project_name is None:
             raise RuntimeError("Claude Code launch arguments were not prepared before pane creation.")
         return {"CLAUDE_CODE_PROJECT_DIR_NAME": self.claude_project_name}
@@ -132,12 +132,12 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         if mode not in {"queue", "steer"}:
             raise ValueError(f"Unsupported Claude Code message delivery mode: {mode!r}")
         raise NotImplementedError(
-            f"Claude Code has no documented native local {mode} message API for this runtime."
+            f"Claude Code has no documented local {mode} message API for this runtime."
         )
 
     @classmethod
     async def ensure_installed(cls) -> Path:
-        """Return Claude Code's launcher for startup callers, using its native installer when missing."""
+        """Return Claude Code's launcher for startup callers, using its installer when missing."""
         return await get_or_install_cli(
             cls.harness_name,
             Path.home() / ".local" / "bin" / ("claude.exe" if os.name == "nt" else "claude"),
@@ -149,7 +149,7 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         """Set the reasoning level for this Claude Code invocation."""
         return ["--effort", effort]
 
-    def native_home(self) -> Path:
+    def profile_directory(self) -> Path:
         """Use the user's Claude Code settings and credential store without copying them."""
         return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser().resolve()
 
@@ -166,6 +166,6 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
             binding = json.loads(record.read_bytes())
             conversation = str(UUID(binding["id"]))
             project_directory = claude_directory / "projects" / "agents" / record.stem
-            remove_native_link(
+            remove_project_link(
                 get_claude_project_link(Path(binding["home"]), conversation), project_directory
             )

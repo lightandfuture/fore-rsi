@@ -40,7 +40,7 @@ class ToolServerEndpoint:
 
 
 class ToolMcpHost:
-    """Keep each Agent's tool set reachable for its native process."""
+    """Keep each Agent's tool set reachable for its agent process."""
 
     def __init__(self) -> None:
         """Prepare an empty host; the first published tool set opens the listener."""
@@ -63,7 +63,7 @@ class ToolMcpHost:
                 task_group.cancel_scope.cancel()
 
     async def publish(self, server: MCPServer | None, *, address_file: Path | None = None) -> str | None:
-        """Publish one Agent's tools and optionally write its native discovery address."""
+        """Publish one Agent's tools and optionally write its CLI discovery address."""
         if server is None:
             return None
         async with self.host_lock:

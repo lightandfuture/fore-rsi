@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-// Expose the interactive Pi session's state and native message delivery through local IPC.
+// Expose the interactive Pi session's state and message delivery through local IPC.
 import { chmodSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -39,7 +39,7 @@ function sendJson(response: ServerResponse, status: number, value: object): void
   response.end(JSON.stringify(value));
 }
 
-/** Serve state and native message control for one Pi session. */
+/** Serve state and message control for one Pi session. */
 export default function serveIpc(pi: ExtensionAPI): void {
   const socketFlag = "fore-rsi-ipc-socket";
   const portFlag = "fore-rsi-ipc-port";

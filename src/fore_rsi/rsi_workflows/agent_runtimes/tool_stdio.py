@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Connect a native MCP stdio client to its member's current stateless, JSON-response HTTP endpoint."""
+"""Connect an MCP stdio client to its member's current stateless, JSON-response HTTP endpoint."""
 
 import json
 import sys
@@ -31,7 +31,7 @@ def forward_mcp_message(address_file: Path, message: bytes, version: str | None)
 
 
 def relay_mcp_messages(address_file: Path) -> None:
-    """Relay JSON-RPC messages until the native client closes stdin."""
+    """Relay JSON-RPC messages until the CLI client closes stdin."""
     protocol_version = None
     for line in sys.stdin.buffer:
         message = json.loads(line)

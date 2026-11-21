@@ -20,7 +20,7 @@ class PiSessionState(TypedDict):
 
 
 class PiLiveSessionState(PiSessionState):
-    """Live Pi session settings, including the native settle sequence."""
+    """Live Pi session settings, including the settle sequence."""
 
     settled_seq: int
 

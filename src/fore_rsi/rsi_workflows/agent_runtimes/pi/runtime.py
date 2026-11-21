@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Run one workflow member in the native Pi terminal with its own record file and tools."""
+"""Run one workflow member in the Pi terminal with its own record file and tools."""
 
 import asyncio
 import os
@@ -35,7 +35,7 @@ class IpcEndpoint(TypedDict):
 
 
 class PiAgentRuntime(AgentRuntime):
-    """Runtime contract for Pi's native CLI."""
+    """Runtime contract for Pi's CLI."""
 
     harness_name = "pi"
 
@@ -89,7 +89,7 @@ class PiAgentRuntime(AgentRuntime):
         *,
         system_prompt: str | None = None,
     ) -> list[str]:
-        """Open this member's record file with Pi's native lifecycle hook, role instructions and tools."""
+        """Open this member's record file with Pi's lifecycle hook, role instructions and tools."""
         self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         # Pi deduplicates extensions by path. Reuse the terminal hook if the user already installed it.
         profile = Path(os.environ.get("PI_CODING_AGENT_DIR") or Path.home() / ".pi" / "agent").expanduser()
@@ -97,29 +97,29 @@ class PiAgentRuntime(AgentRuntime):
         integrations = terminal_executable().parent
         if not hook.is_file():
             hook = integrations / hook.name
-        native = ["--approve", "--extension", str(integrations / "ipc.ts")]
+        launch_arguments = ["--approve", "--extension", str(integrations / "ipc.ts")]
         if "socket_path" in self.ipc_endpoint:
-            native.extend(["--fore-rsi-ipc-socket", self.ipc_endpoint["socket_path"]])
+            launch_arguments.extend(["--fore-rsi-ipc-socket", self.ipc_endpoint["socket_path"]])
         else:
-            native.extend(["--fore-rsi-ipc-port", str(self.ipc_endpoint["port"])])
-        native.extend([
+            launch_arguments.extend(["--fore-rsi-ipc-port", str(self.ipc_endpoint["port"])])
+        launch_arguments.extend([
             "--fore-rsi-ipc-token", self.ipc_endpoint["token"],
             "--extension", str(hook), "--session-dir", str(self.harness_directory),
             "--session", str(self.get_agent_file_path(".jsonl")),
         ])
         if self.agent_config.model is not None:
-            native.extend(["--model", self.agent_config.model])
+            launch_arguments.extend(["--model", self.agent_config.model])
         if self.agent_config.effort is not None:
-            native.extend(["--thinking", self.agent_config.effort])
+            launch_arguments.extend(["--thinking", self.agent_config.effort])
         instructions = self.get_agent_file_path(".instructions.md")
         if system_prompt is not None:
             write_private_text(instructions, system_prompt)
         if instructions.is_file():
-            native.extend(["--append-system-prompt", str(instructions)])
-        return super().build_launch_command(executable, [*native, *arguments])
+            launch_arguments.extend(["--append-system-prompt", str(instructions)])
+        return super().build_launch_command(executable, [*launch_arguments, *arguments])
 
     async def close(self) -> None:
-        """Stop Pi and remove a private Unix socket left by an interrupted native process."""
+        """Stop Pi and remove a private Unix socket left by an interrupted agent process."""
         try:
             await super().close()
         finally:
@@ -132,13 +132,13 @@ class PiAgentRuntime(AgentRuntime):
         message: str,
         mode: MessageDeliveryMode = "queue",
     ) -> None:
-        """Deliver a user message through Pi's native steer or follow-up queue."""
+        """Deliver a user message through Pi's steer or follow-up queue."""
         if mode not in {"queue", "steer"}:
             raise ValueError(f"Unsupported Pi message delivery mode: {mode!r}")
         async with self.message_lock:
             session_state, state = await self.session_state()
             if state == "stopped":
-                raise RuntimeError("Start the Pi member before sending a native message.")
+                raise RuntimeError("Start the Pi member before sending a message.")
             if not isinstance(session_state, dict) or "settled_seq" not in session_state:
                 raise RuntimeError("Pi did not report a live settle sequence.")
             self.pending_settled_seq = session_state["settled_seq"]
@@ -154,7 +154,7 @@ class PiAgentRuntime(AgentRuntime):
                 raise
 
     async def wait_for_settle(self) -> None:
-        """Wait for Pi's native agent_settled event after the last submitted message."""
+        """Wait for Pi's agent_settled event after the last submitted message."""
         after = self.pending_settled_seq
         if after is None:
             raise RuntimeError("Submit a Pi message before waiting for settle.")

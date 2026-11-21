@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Reuse native CLIs or prepare them with their official user-level installers."""
+"""Reuse agent CLIs or prepare them with their official user-level installers."""
 
 import asyncio
 import os
@@ -25,7 +25,7 @@ async def get_or_install_cli(
     shell: str = "sh",
     environment: Mapping[str, str] | None = None,
 ) -> Path:
-    """Return a native CLI launcher for a backend, installing it only when absent."""
+    """Return an agent CLI launcher for a backend, installing it only when absent."""
     executable = shutil.which(command_name) or shutil.which(str(installed_path))
     if executable is not None:
         return Path(executable).absolute()
@@ -68,7 +68,7 @@ async def run_installation_command(command: Sequence[str], environment: Mapping[
         stdout=asyncio.subprocess.PIPE,
     )
     try:
-        # A pipe keeps native installers from launching their interactive CLI after installation.
+        # A pipe keeps installers from launching their interactive CLI after installation.
         if process.stdout is None:
             raise RuntimeError("The installer process did not expose stdout.")
         while output := await process.stdout.read(65536):

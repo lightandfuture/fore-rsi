@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from ..workflow import InferenceWorkflow
 
 
-def build_initial_explorer_workflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Establish the inference baseline before filling Explorer slots."""
+def build_initial_explorer_subflow(workflow: "InferenceWorkflow") -> StateGraph:
+    """Build the inference baseline subflow before filling Explorer slots."""
     graph = StateGraph(dict)
     for node_name in (
         "define_initial_baseline",

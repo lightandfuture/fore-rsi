@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from ..workflow import InferenceWorkflow
 
 
-def build_exploration_workflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Run one inference Explorer work item from direction discovery to handoff."""
+def build_exploration_subflow(workflow: "InferenceWorkflow") -> StateGraph:
+    """Build one inference Explorer subflow from direction discovery to handoff."""
     graph = StateGraph(dict)
     for node_name in (
         "dispatch_explorer_work",

@@ -22,17 +22,14 @@ from fore_rsi.rsi_workflows.custom_workflows.default.agents.verifier import (
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.watchdog import (
     WatchdogAgent,
 )
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.experiment_workflow import (
-    build_experiment_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.exploration_subflow import (
+    build_exploration_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.exploration_workflow import (
-    build_exploration_workflow,
-)
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.initial_verifier_workflow import (
-    build_initial_verifier_workflow,
-)
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general_subflow import (
     wait_for_task_submission,
+)
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.verification_subflow import (
+    build_verification_subflow,
 )
 from fore_rsi.rsi_workflows.workflow_runtimes.task import Task, TaskSubmission
 
@@ -87,20 +84,18 @@ class DefaultWorkflow(BaseWorkflow):
             "update_agent_scheduler",
             self.agent_scheduler.update_agent_scheduler,
         )
+        # This node intentionally performs no task initialization. It fans out to
+        # the Explorer and Verifier subflows, which own their respective setup.
         graph.add_node("initialize_first_task", lambda workflow_state: {})
-        graph.add_node(
-            "initialize_verifier_pool",
-            build_initial_verifier_workflow(self).compile(),
-        )
         graph.add_node("update_task_context", lambda workflow_state: {})
         graph.add_node("route_workflow_stage", lambda workflow_state: {})
         graph.add_node(
             "run_exploration_area",
-            build_default_exploration_workflow(self).compile(),
+            build_exploration_subflow(self).compile(),
         )
         graph.add_node(
-            "run_experiment_area",
-            build_default_experiment_workflow(self).compile(),
+            "run_verification_area",
+            build_verification_subflow(self).compile(),
         )
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
 
@@ -134,34 +129,32 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_conditional_edges(
             "update_agent_scheduler",
             lambda workflow_state: (
-                "first_task"
+                "initialize"
                 if workflow_state.get("is_first_task_submission", False)
                 else "existing_task"
             ),
             {
-                "first_task": "initialize_first_task",
+                "initialize": "initialize_first_task",
                 "existing_task": "update_task_context",
             },
         )
 
         # update_agent_scheduler
-        #       +--[first_task]----> initialize_first_task
+        #       +--[initialize]----> initialize_first_task
         #       |                         +--> run_exploration_area
-        #       |                         +--> initialize_verifier_pool -> END
+        #       |                         +--> run_verification_area
         #       +--[existing_task]-> update_task_context
         #                                      +--> wait_for_task_submission
         graph.add_edge("initialize_first_task", "run_exploration_area")
-        graph.add_edge("initialize_first_task", "initialize_verifier_pool")
-        graph.add_edge("initialize_verifier_pool", END)
+        graph.add_edge("initialize_first_task", "run_verification_area")
         graph.add_edge("update_task_context", "wait_for_task_submission")
 
-        # run_exploration_area --+
-        # run_work_area ---------+
-        # run_experiment_area ---+--> route_workflow_stage
+        # run_exploration_area ---+
+        # run_verification_area --+--> route_workflow_stage
         #                                  |
         # route_workflow_stage             |
         #       +--[exploration] -> run_exploration_area
-        #       +--[experiment]   -> run_experiment_area
+        #       +--[verification] -> run_verification_area
         #       +--[wait_for_task_submission]
         #       +--[finish]       -> END
         graph.add_conditional_edges(
@@ -171,10 +164,10 @@ class DefaultWorkflow(BaseWorkflow):
             ),
             {
                 "exploration": "run_exploration_area",
-                "experiment": "run_experiment_area",
+                "verification": "run_verification_area",
                 "wait_for_task_submission": "wait_for_task_submission",
                 "finish": END,
             },
         )
         graph.add_edge("run_exploration_area", "route_workflow_stage")
-        graph.add_edge("run_experiment_area", "route_workflow_stage")
+        graph.add_edge("run_verification_area", "route_workflow_stage")

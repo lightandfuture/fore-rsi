@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from ..workflow import InferenceWorkflow
 
 
-def build_initial_verifier_workflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Prepare inference Verifier resources without blocking initial exploration."""
+def build_initial_verifier_subflow(workflow: "InferenceWorkflow") -> StateGraph:
+    """Build the inference Verifier bootstrap subflow without blocking exploration."""
     graph = StateGraph(dict)
     for node_name in (
         "prepare_verifier_resources",

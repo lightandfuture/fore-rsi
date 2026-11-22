@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from ..workflow import InferenceWorkflow
 
 
-def build_experiment_workflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Run one inference experiment through Verifier admission and evaluation."""
+def build_experiment_subflow(workflow: "InferenceWorkflow") -> StateGraph:
+    """Build one inference experiment subflow through Verifier admission and evaluation."""
     graph = StateGraph(dict)
     for node_name in (
         "dispatch_experiment_work",

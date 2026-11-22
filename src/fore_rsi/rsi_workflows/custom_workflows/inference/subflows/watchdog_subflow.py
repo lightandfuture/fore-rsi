@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from ..workflow import InferenceWorkflow
 
 
-def build_watchdog_workflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Run periodic Watchdog review and feedback for inference work items."""
+def build_watchdog_subflow(workflow: "InferenceWorkflow") -> StateGraph:
+    """Build the periodic Watchdog review and feedback subflow."""
     graph = StateGraph(dict)
     for node_name in (
         "create_watchdog",

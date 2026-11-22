@@ -63,10 +63,9 @@ class ExplorerAgent(BaseAgent):
         """Study the task context before defining the initial baseline."""
         explorer_agent = cast(ExplorerAgent, workflow_state["agent"])
         prompt_context = {
-            "task_revision_number": workflow_state["task_revision_number"],
-            "task_revision_file": workflow_state["task_revision_file"],
-            "previous_task_revision_files": workflow_state.get(
-                "previous_task_revision_files", []
+            "task_revision": workflow_state["task_revision"],
+            "previous_task_revisions": workflow_state.get(
+                "previous_task_revisions", []
             ),
         }
         user_prompt = merge_prompts(

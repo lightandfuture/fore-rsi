@@ -12,27 +12,27 @@ from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.worker import WorkerAgent
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general_subflow import (
     wait_for_task_submission,
 )
 from fore_rsi.rsi_workflows.custom_workflows.default.workflow import DefaultWorkflow
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.experiment_workflow import (
-    build_experiment_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.experiment_subflow import (
+    build_experiment_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.exploration_workflow import (
-    build_exploration_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.exploration_subflow import (
+    build_exploration_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_explorer_workflow import (
-    build_initial_explorer_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_explorer_subflow import (
+    build_initial_explorer_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_verifier_workflow import (
-    build_initial_verifier_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_verifier_subflow import (
+    build_initial_verifier_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.watchdog_workflow import (
-    build_watchdog_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.watchdog_subflow import (
+    build_watchdog_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.work_workflow import (
-    build_work_workflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.work_subflow import (
+    build_work_subflow,
 )
 
 
@@ -66,26 +66,26 @@ class InferenceWorkflow(DefaultWorkflow):
         graph.add_node("initialize_first_task", lambda workflow_state: {})
         graph.add_node(
             "initialize_explorer_context",
-            build_initial_explorer_workflow(self).compile(),
+            build_initial_explorer_subflow(self).compile(),
         )
         graph.add_node(
             "initialize_verifier_pool",
-            build_initial_verifier_workflow(self).compile(),
+            build_initial_verifier_subflow(self).compile(),
         )
         graph.add_node("update_task_context", lambda workflow_state: {})
         graph.add_node("route_workflow_stage", lambda workflow_state: {})
         graph.add_node(
             "run_exploration_area",
-            build_exploration_workflow(self).compile(),
+            build_exploration_subflow(self).compile(),
         )
-        graph.add_node("run_work_area", build_work_workflow(self).compile())
+        graph.add_node("run_work_area", build_work_subflow(self).compile())
         graph.add_node(
             "run_experiment_area",
-            build_experiment_workflow(self).compile(),
+            build_experiment_subflow(self).compile(),
         )
         graph.add_node(
             "run_watchdog_area",
-            build_watchdog_workflow(self).compile(),
+            build_watchdog_subflow(self).compile(),
         )
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
 

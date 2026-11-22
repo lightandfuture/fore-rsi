@@ -92,15 +92,10 @@ class Task:
             )
             self.task_revisions.append(task_revision)
 
-        task_revision_files = [
-            str(revision.revision_file_path) for revision in self.task_revisions
-        ]
-        previous_task_revision_files = task_revision_files[:-1]
+        previous_task_revisions = self.task_revisions[:-1]
         return {
-            "task_revision_number": task_revision.revision_number,
-            "task_revision_file": str(task_revision.revision_file_path),
-            "task_revision_files": task_revision_files,
-            "previous_task_revision_files": previous_task_revision_files,
+            "task_revision": task_revision,
+            "previous_task_revisions": previous_task_revisions,
             "is_first_task_submission": is_first_task_submission,
         }
 

@@ -4,6 +4,7 @@
 """Define Agent tools and serve each set through a workflow-owned MCP endpoint."""
 
 import asyncio
+from functools import partial, update_wrapper
 import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractContextManager, asynccontextmanager, nullcontext
@@ -20,6 +21,16 @@ from starlette.routing import Mount, Router
 from fore_rsi.utils.paths import write_private_text
 
 type AgentTool = Callable[..., Awaitable[dict[str, object]]]
+
+
+def register_agent_tool(
+    tool: AgentTool,
+    **dependencies: object,
+) -> AgentTool:
+    """Bind private Workflow dependencies before the tool is registered with MCP."""
+    registered_tool = partial(tool, **dependencies)
+    update_wrapper(registered_tool, tool)
+    return registered_tool
 
 
 def create_tool_mcp(tools: Sequence[AgentTool]) -> MCPServer:

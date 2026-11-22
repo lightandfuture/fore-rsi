@@ -67,32 +67,40 @@ class Task:
     def __init__(self, session_directory: Path) -> None:
         """Create task history state for one new workflow session."""
         self.session_directory = session_directory
-        self.current_task: TaskRevision | None = None
+        self.task_revisions: list[TaskRevision] = []
+
+    @property
+    def current_task(self) -> TaskRevision | None:
+        """Return the latest revision submitted during this Workflow run."""
+        return self.task_revisions[-1] if self.task_revisions else None
 
     def publish_task(self, workflow_state: Mapping[str, object]) -> dict[str, object]:
-        """Persist the submitted task and return revision data to the graph."""
+        """Persist the submitted task and return current and prior revision paths to the graph."""
         task_submission = workflow_state["task_submission"]
-        is_first_task_submission = self.current_task is None
+        current_task = self.current_task
+        is_first_task_submission = current_task is None
         # LangGraph may replay this node after a downstream failure; reuse the completed revision.
-        if (
-            self.current_task is not None
-            and self.current_task.task_submission == task_submission
-        ):
-            task_revision = self.current_task
+        if current_task is not None and current_task.task_submission == task_submission:
+            task_revision = current_task
         else:
             next_revision_number = (
-                self.current_task.revision_number + 1
-                if self.current_task is not None
-                else 1
+                current_task.revision_number + 1 if current_task is not None else 1
             )
             task_revision = self.write_task_revision(
                 next_revision_number,
                 task_submission,
             )
-        self.current_task = task_revision
+            self.task_revisions.append(task_revision)
+
+        task_revision_files = [
+            str(revision.revision_file_path) for revision in self.task_revisions
+        ]
+        previous_task_revision_files = task_revision_files[:-1]
         return {
             "task_revision_number": task_revision.revision_number,
             "task_revision_file": str(task_revision.revision_file_path),
+            "task_revision_files": task_revision_files,
+            "previous_task_revision_files": previous_task_revision_files,
             "is_first_task_submission": is_first_task_submission,
         }
 

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
 from fore_rsi.rsi_workflows.workgroup import Workgroup
-from fore_rsi.utils.prompt_renderer import render_prompt_bundle
+from fore_rsi.utils.prompt_renderer import merge_prompts, render_prompt
 
 if TYPE_CHECKING:
     from fore_rsi.rsi_workflows.custom_workflows.default.workflow import DefaultWorkflow
@@ -51,26 +51,29 @@ class ExplorerAgent(BaseAgent):
             "agent_name": self.agent_name,
             "workgroup_name": self.workgroup.workgroup_name,
         }
-        self.system_prompt = render_prompt_bundle(
-            [self.common_system_prompt_path, self.system_prompt_path],
-            prompt_context,
-            section_transition="Here are the Explorer-specific system instructions.",
+        self.system_prompt = merge_prompts(
+            [
+                render_prompt(self.common_system_prompt_path),
+                render_prompt(self.system_prompt_path, prompt_context),
+            ]
         )
 
     @staticmethod
     async def study_initial_context(workflow_state: Mapping[str, object]) -> dict[str, object]:
         """Study the task context before defining the initial baseline."""
-        explorer = cast(ExplorerAgent, workflow_state["agent"])
-        user_prompt = render_prompt_bundle(
+        explorer_agent = cast(ExplorerAgent, workflow_state["agent"])
+        prompt_context = {
+            "task_revision_number": workflow_state["task_revision_number"],
+            "task_revision_file": workflow_state["task_revision_file"],
+            "previous_task_revision_files": workflow_state.get(
+                "previous_task_revision_files", []
+            ),
+        }
+        user_prompt = merge_prompts(
             [
-                ExplorerAgent.common_user_prompt_path,
-                ExplorerAgent.study_initial_context_prompt_path,
-            ],
-            {
-                "task_revision_number": workflow_state["task_revision_number"],
-                "task_revision_file": workflow_state["task_revision_file"],
-            },
-            section_transition="Here are the Explorer's instructions for this workflow stage.",
+                render_prompt(ExplorerAgent.common_user_prompt_path),
+                render_prompt(ExplorerAgent.study_initial_context_prompt_path, prompt_context),
+            ]
         )
-        await explorer.send_message(user_prompt, mode="queue")
+        await explorer_agent.send_message(user_prompt, mode="queue")
         return {}

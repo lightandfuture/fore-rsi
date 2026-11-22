@@ -11,23 +11,27 @@ from fore_rsi.config import WorkflowConfig
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
+from fore_rsi.rsi_workflows.custom_workflows.default.agents.worker import WorkerAgent
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
+    wait_for_task_submission,
+)
 from fore_rsi.rsi_workflows.custom_workflows.default.workflow import DefaultWorkflow
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.experiment import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.experiment_workflow import (
     build_experiment_workflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.exploration import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.exploration_workflow import (
     build_exploration_workflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.initial_explorer import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_explorer_workflow import (
     build_initial_explorer_workflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.initial_verifier import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_verifier_workflow import (
     build_initial_verifier_workflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.watchdog import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.watchdog_workflow import (
     build_watchdog_workflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.workflow_flows.work import (
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.work_workflow import (
     build_work_workflow,
 )
 
@@ -36,6 +40,7 @@ class InferenceWorkflow(DefaultWorkflow):
     """Run the detailed Explorer, Worker, and Verifier loop for inference optimization."""
 
     workflow_name = "inference"
+    agent_roles = {**DefaultWorkflow.agent_roles, "Worker": WorkerAgent}
 
     def build_workflow_nodes(self, graph: StateGraph) -> None:
         """Add inference task intake, initialization, and area nodes."""
@@ -49,7 +54,10 @@ class InferenceWorkflow(DefaultWorkflow):
                 workgroup_name=WorkflowConfig.GLOBAL_WORKGROUP_NAME,
             ),
         )
-        graph.add_node("wait_for_task_submission", self.wait_for_task_submission)
+        graph.add_node(
+            "wait_for_task_submission",
+            partial(wait_for_task_submission, self),
+        )
         graph.add_node("publish_task", self.task.publish_task)
         graph.add_node(
             "update_agent_scheduler",
@@ -64,7 +72,7 @@ class InferenceWorkflow(DefaultWorkflow):
             "initialize_verifier_pool",
             build_initial_verifier_workflow(self).compile(),
         )
-        graph.add_node("apply_existing_task_update", lambda workflow_state: {})
+        graph.add_node("update_task_context", lambda workflow_state: {})
         graph.add_node("route_workflow_stage", lambda workflow_state: {})
         graph.add_node(
             "run_exploration_area",
@@ -83,27 +91,32 @@ class InferenceWorkflow(DefaultWorkflow):
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
         """Add inference task intake, initialization, area routing, and finish edges."""
-        # Edge flow:
         #
-        # START -> create_coordinator -> task intake -> update_agent_scheduler
+        # START -> create_coordinator
+        #              +--[have_task]--------> parse_task --+
+        #              |                                    |
+        #              +--[await_user_input]-> wait_for_task_submission
+        #                                                         |
+        #                                                     publish_task
         #                                      |
-        #                    +-----------------+------------------+
-        #                    |                                    |
-        #              first task                          existing task
-        #                    |                                    |
-        #        initialize_first_task          apply_existing_task_update
-        #              +-----------+                         |
-        #              |           |                         v
-        #              v           v                route_workflow_stage
-        # initialize_explorer_context  initialize_verifier_pool
-        #              |                       +--> END
-        #              v
-        #       run_exploration_area                  route_workflow_stage
-        #              |                               +--> run_exploration_area
-        #              +-------------------------------+--> run_work_area
-        #                                              +--> run_experiment_area
-        #                                              +--> run_watchdog_area
-        #                                              +--> wait_for_task_submission / END
+        #                              update_agent_scheduler
+        #                              +---------+---------+
+        #                              |                   |
+        #                    first_task              existing_task
+        #                              |                   |
+        #                    initialize_first_task  update_task_context
+        #                         +---------+                 |
+        #                         |         |                 v
+        #                         v         v        route_workflow_stage
+        #              initialize_explorer_context  initialize_verifier_pool
+        #                         |                 +--> END
+        #                         v
+        #              run_exploration_area                 route_workflow_stage
+        #                         |                          +--> run_exploration_area
+        #                         +--------------------------+--> run_work_area
+        #                                                    +--> run_experiment_area
+        #                                                    +--> run_watchdog_area
+        #                                                    +--> wait_for_task_submission / END
         coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
         graph.add_edge(START, coordinator_node_name)
         graph.add_conditional_edges(
@@ -128,14 +141,14 @@ class InferenceWorkflow(DefaultWorkflow):
             ),
             {
                 "first_task": "initialize_first_task",
-                "existing_task": "apply_existing_task_update",
+                "existing_task": "update_task_context",
             },
         )
         graph.add_edge("initialize_first_task", "initialize_explorer_context")
         graph.add_edge("initialize_first_task", "initialize_verifier_pool")
         graph.add_edge("initialize_explorer_context", "run_exploration_area")
         graph.add_edge("initialize_verifier_pool", END)
-        graph.add_edge("apply_existing_task_update", "route_workflow_stage")
+        graph.add_edge("update_task_context", "wait_for_task_submission")
         graph.add_conditional_edges(
             "route_workflow_stage",
             lambda workflow_state: workflow_state.get(

@@ -32,7 +32,6 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         "exploration",
         "check_exploration",
         "queue_verification_request",
-        "release_explorer_slot",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
 
@@ -64,8 +63,6 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #             +--[revise_exploration] ----> revise_exploration
     #             |                            --> route_exploration_stage
     #             +--[submit_for_verification] -> queue_verification_request
-    #                                          +--> release_explorer_slot
-    #                                          |    --> route_exploration_stage
     #                                          +--> END
     #             +--[switch_exploration] ----> check_exploration_switch
     #                                          +--[feedback_received / preempt]
@@ -76,8 +73,8 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #                                          |      --> create_workgroup
     #                                          |      --> fork_explorer
     #                                          |      --> route_exploration_stage
-    #                                          +--[wake_explorer: quota + queue]
-    #                                          |      --> wake_explorer
+    #                                          +--[wake_explorer: queue]
+    #                                          |      --> wake_explorer (blocked)
     #                                          |      --> route_exploration_stage
     #                                          +--[no_switch]
     #                                                 --> route_exploration_stage
@@ -136,9 +133,7 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     graph.add_edge("wait_for_explorer_attempt_end", "route_exploration_stage")
     graph.add_edge("exploration", "route_exploration_stage")
     graph.add_edge("check_exploration", "route_exploration_stage")
-    graph.add_edge("queue_verification_request", "release_explorer_slot")
     graph.add_edge("queue_verification_request", END)
-    graph.add_edge("release_explorer_slot", "route_exploration_stage")
     graph.add_edge("sleep_explorer", END)
     graph.add_edge("wake_explorer", "route_exploration_stage")
     return graph

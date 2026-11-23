@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Minimal exploration subflow for the default workflow."""
+"""Explorer subflow graph for the default workflow."""
 
 from typing import TYPE_CHECKING
 
@@ -12,53 +12,118 @@ if TYPE_CHECKING:
 
 
 def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
-    """Build one generic Explorer subflow for the current task."""
+    """Build the Explorer subflow graph for the current task."""
     graph = StateGraph(dict)
     for node_name in (
         "route_exploration_stage",
-        "initialize_explorer_context",
-        "acquire_explorer",
-        "exploration_chat",
-        "wait_for_stage_completion",
-        "exploration_area_complete",
+        "create_workgroup",
+        "study_framework",
+        "fork_explorer",
+        "wait_direction_quota",
+        "exploration_direction",
+        "check_exploration_direction",
+        "add_to_exploration_direction_pool",
+        "revise_exploration_direction",
+        "release_exploration_direction",
+        "check_exploration_switch",
+        "settle_explorer",
+        "exploration",
+        "check_exploration",
+        "queue_verification_request",
+        "release_explorer_slot",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
 
-    # START -> route_exploration_stage
-    #             +--[initialize_explorer]--> initialize_explorer_context --+
-    #             |                                                        |
-    #             +--[existing_task]----------------------------------------+
-    #                                                                          |
-    #                                                                          v
-    #                                                                  acquire_explorer
-    #                                                                          |
-    #                                                                          v
-    #                                                                  exploration_chat
-    #                                                                          |
-    #                                                                          v
-    #                                                              wait_for_stage_completion
-    #                                                                          |
-    #                                                                          v
-    #                                                              exploration_area_complete
-    #                                                                          |
-    #                                                                          v
-    #                                                                         END
+    # START --> route_exploration_stage
+    #             +--[initialize_explorer] --> create_workgroup
+    #             |                            |
+    #             |                            v
+    #             |                      study_framework
+    #             |                            |
+    #             |                            v
+    #             |                      fork_explorer [seed = study_framework, forks = 4]
+    #             |                            +--[fork_1] --> route_exploration_stage
+    #             |                            +--[fork_2] --> route_exploration_stage
+    #             |                            +--[fork_3] --> route_exploration_stage
+    #             |                            +--[fork_4] --> route_exploration_stage
+    #             +--[select_direction] ------> wait_direction_quota
+    #             |                            --> exploration_direction
+    #             |                            --> route_exploration_stage
+    #             +--[checking_direction] ------> check_exploration_direction
+    #             |                            --> route_exploration_stage
+    #             +--[direction_rejected] ----> revise_exploration_direction
+    #             |                            --> route_exploration_stage
+    #             +--[direction_confirmed] ---> add_to_exploration_direction_pool
+    #             |                            --> release_exploration_direction
+    #             |                            --> route_exploration_stage
+    #             +--[switch_exploration] ----> check_exploration_switch
+    #             |                            +--[feedback_received]
+    #             |                            |      --> preempt_explorer
+    #             |                            |      --> wait_for_explorer_attempt_end
+    #             |                            |      --> route_exploration_stage
+    #             |                            +--[create_explorer]
+    #             |                            |      --> create_workgroup
+    #             |                            |      --> fork_explorer
+    #             |                            |      --> route_exploration_stage
+    #             |                            +--[released_slot]
+    #             |                            |      --> route_exploration_stage
+    #             |                            +--[no_switch]
+    #             |                                   --> route_exploration_stage
+    #             +--[exploration] ------------> exploration
+    #             |                            --> route_exploration_stage
+    #             +--[checking] ---------------> check_exploration
+    #             |                            --> route_exploration_stage
+    #             +--[revise_exploration] ----> revise_exploration
+    #             |                            --> route_exploration_stage
+    #             +--[submit_for_verification] -> queue_verification_request
+    #                                          +--> release_explorer_slot
+    #                                          |    --> route_exploration_stage
+    #                                          +--> END
     graph.add_edge(START, "route_exploration_stage")
     graph.add_conditional_edges(
         "route_exploration_stage",
-        lambda workflow_state: (
-            "initialize_explorer"
-            if workflow_state.get("is_first_task_submission", False)
-            else "existing_task"
+        lambda workflow_state: workflow_state.get(
+            "next_exploration_stage",
+            (
+                "initialize_explorer"
+                if workflow_state.get("is_first_task_submission", False)
+                and not workflow_state.get("explorer_context_ready", False)
+                else "exploration"
+            ),
         ),
         {
-            "initialize_explorer": "initialize_explorer_context",
-            "existing_task": "acquire_explorer",
+            "initialize_explorer": "create_workgroup",
+            "select_direction": "wait_direction_quota",
+            "checking_direction": "check_exploration_direction",
+            "direction_rejected": "revise_exploration_direction",
+            "direction_confirmed": "add_to_exploration_direction_pool",
+            "switch_exploration": "check_exploration_switch",
+            "exploration": "exploration",
+            "checking": "check_exploration",
+            "revise_exploration": "exploration",
+            "submit_for_verification": "queue_verification_request",
         },
     )
-    graph.add_edge("initialize_explorer_context", "acquire_explorer")
-    graph.add_edge("acquire_explorer", "exploration_chat")
-    graph.add_edge("exploration_chat", "wait_for_stage_completion")
-    graph.add_edge("wait_for_stage_completion", "exploration_area_complete")
-    graph.add_edge("exploration_area_complete", END)
+    graph.add_edge("create_workgroup", "study_framework")
+    graph.add_edge("study_framework", "fork_explorer")
+    graph.add_edge("fork_explorer", "route_exploration_stage")
+    graph.add_edge("wait_direction_quota", "exploration_direction")
+    graph.add_edge("exploration_direction", "route_exploration_stage")
+    graph.add_edge(
+        "check_exploration_direction",
+        "route_exploration_stage",
+    )
+    graph.add_edge(
+        "add_to_exploration_direction_pool",
+        "release_exploration_direction",
+    )
+    graph.add_edge("release_exploration_direction", "route_exploration_stage")
+    graph.add_edge("revise_exploration_direction", "route_exploration_stage")
+    graph.add_edge("check_exploration_switch", "settle_explorer")
+    graph.add_edge("settle_explorer", "route_exploration_stage")
+    graph.add_edge("exploration", "route_exploration_stage")
+    graph.add_edge("check_exploration", "route_exploration_stage")
+    graph.add_edge("queue_verification_request", "release_explorer_slot")
+    graph.add_edge("queue_verification_request", END)
+    graph.add_edge("release_explorer_slot", "route_exploration_stage")
     return graph

@@ -24,9 +24,11 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         "check_exploration_direction",
         "add_to_exploration_direction_pool",
         "revise_exploration_direction",
-        "release_exploration_direction",
         "check_exploration_switch",
-        "settle_explorer",
+        "preempt_explorer",
+        "wait_for_explorer_attempt_end",
+        "sleep_explorer",
+        "wake_explorer",
         "exploration",
         "check_exploration",
         "queue_verification_request",
@@ -54,21 +56,7 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #             +--[direction_rejected] ----> revise_exploration_direction
     #             |                            --> route_exploration_stage
     #             +--[direction_confirmed] ---> add_to_exploration_direction_pool
-    #             |                            --> release_exploration_direction
     #             |                            --> route_exploration_stage
-    #             +--[switch_exploration] ----> check_exploration_switch
-    #             |                            +--[feedback_received]
-    #             |                            |      --> preempt_explorer
-    #             |                            |      --> wait_for_explorer_attempt_end
-    #             |                            |      --> route_exploration_stage
-    #             |                            +--[create_explorer]
-    #             |                            |      --> create_workgroup
-    #             |                            |      --> fork_explorer
-    #             |                            |      --> route_exploration_stage
-    #             |                            +--[released_slot]
-    #             |                            |      --> route_exploration_stage
-    #             |                            +--[no_switch]
-    #             |                                   --> route_exploration_stage
     #             +--[exploration] ------------> exploration
     #             |                            --> route_exploration_stage
     #             +--[checking] ---------------> check_exploration
@@ -79,6 +67,20 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #                                          +--> release_explorer_slot
     #                                          |    --> route_exploration_stage
     #                                          +--> END
+    #             +--[switch_exploration] ----> check_exploration_switch
+    #                                          +--[feedback_received / preempt]
+    #                                          |      --> preempt_explorer
+    #                                          |      --> wait_for_explorer_attempt_end
+    #                                          |      --> route_exploration_stage
+    #                                          +--[create_explorer: quota, no queue]
+    #                                          |      --> create_workgroup
+    #                                          |      --> fork_explorer
+    #                                          |      --> route_exploration_stage
+    #                                          +--[wake_explorer: quota + queue]
+    #                                          |      --> wake_explorer
+    #                                          |      --> route_exploration_stage
+    #                                          +--[no_switch]
+    #                                                 --> route_exploration_stage
     graph.add_edge(START, "route_exploration_stage")
     graph.add_conditional_edges(
         "route_exploration_stage",
@@ -115,15 +117,28 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     )
     graph.add_edge(
         "add_to_exploration_direction_pool",
-        "release_exploration_direction",
+        "route_exploration_stage",
     )
-    graph.add_edge("release_exploration_direction", "route_exploration_stage")
     graph.add_edge("revise_exploration_direction", "route_exploration_stage")
-    graph.add_edge("check_exploration_switch", "settle_explorer")
-    graph.add_edge("settle_explorer", "route_exploration_stage")
+    graph.add_conditional_edges(
+        "check_exploration_switch",
+        lambda workflow_state: workflow_state.get(
+            "exploration_switch_result", "no_switch"
+        ),
+        {
+            "feedback_received": "preempt_explorer",
+            "create_explorer": "create_workgroup",
+            "wake_explorer": "wake_explorer",
+            "no_switch": "route_exploration_stage",
+        },
+    )
+    graph.add_edge("preempt_explorer", "wait_for_explorer_attempt_end")
+    graph.add_edge("wait_for_explorer_attempt_end", "route_exploration_stage")
     graph.add_edge("exploration", "route_exploration_stage")
     graph.add_edge("check_exploration", "route_exploration_stage")
     graph.add_edge("queue_verification_request", "release_explorer_slot")
     graph.add_edge("queue_verification_request", END)
     graph.add_edge("release_explorer_slot", "route_exploration_stage")
+    graph.add_edge("sleep_explorer", END)
+    graph.add_edge("wake_explorer", "route_exploration_stage")
     return graph

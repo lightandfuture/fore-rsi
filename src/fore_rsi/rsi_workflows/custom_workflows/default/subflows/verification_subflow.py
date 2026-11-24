@@ -19,38 +19,42 @@ def build_verification_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         "create_verifier_workgroup",
         "study_verification_criteria",
         "fork_verifier",
-        "wait_verifier_resource_quota",
+        "lock_select_resources",
         "select_verifier_resources",
-        "check_verifier_resource_assignment",
-        "revise_verifier_resource_assignment",
-        "commit_verifier_resource_assignment",
+        "unlock_select_resources",
+        "select_verifier",
         "verification",
+        "wait_for_settle",
+        "is_tool_submission",
+        "exceed_limit_try",
+        "publish_result",
         "queue_exploration_feedback",
-        "publish_verification_result",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
 
     # START --> route_verification_stage
     #             +--[initialize_verifier] --> create_verifier_workgroup
-    #             |                            -> study_verification_criteria
-    #             |                            -> fork_verifier
-    #             |                            -> route_verification_stage
-    #             |
-    #             +--[select_resources] ------> wait_verifier_resource_quota
-    #             |                            -> select_verifier_resources
-    #             |                            -> route_verification_stage
-    #             +--[checking_resources] ----> check_verifier_resource_assignment
-    #             |                            -> route_verification_stage
-    #             +--[resource_rejected] -----> revise_verifier_resource_assignment
-    #             |                            -> route_verification_stage
-    #             +--[resource_confirmed] ----> commit_verifier_resource_assignment
-    #             |                            -> route_verification_stage
-    #             +--[verification] ----------> verification
-    #             |                            -> route_verification_stage
-    #             +--[revise_exploration] ---> queue_exploration_feedback
-    #             |                            -> END
-    #             +--[verification_complete]-> publish_verification_result
-    #                                          -> END
+    #             |                            --> study_verification_criteria
+    #             |                            --> fork_verifier [seed = study_verification_criteria, quota = 2]
+    #             |                                 +--[verifier_1] --> route_verification_stage[select_resources]
+    #             |                                 +--[verifier_2] --> route_verification_stage[select_resources]
+    #             +--[select_resources] ------> lock_select_resources
+    #             |                            --> select_verifier_resources
+    #             |                            --> wait_for_settle --> is_tool_submission
+    #             |                                +--[is_tool_submission]
+    #             |                                |      --> unlock_select_resources --> END
+    #             |                                +--[not_tool_submission]
+    #             |                                |      --> select_verifier_resources
+    #             |                                +--[exceed_limit_try]
+    #             |                                       --> END
+    #             +--[verification] ----------> select_verifier --> verification (experimenting)
+    #             |                            --> wait_for_settle --> is_tool_submission
+    #             |                                +--[is_tool_submission]
+    #             |                                |      --> publish_result --> queue_exploration_feedback --> END[exploration]
+    #             |                                +--[not_tool_submission]
+    #             |                                |      --> verification
+    #             |                                +--[exceed_limit_try]
+    #             |                                       --> END
     graph.add_edge(START, "route_verification_stage")
     graph.add_conditional_edges(
         "route_verification_stage",
@@ -65,24 +69,35 @@ def build_verification_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         ),
         {
             "initialize_verifier": "create_verifier_workgroup",
-            "select_resources": "wait_verifier_resource_quota",
-            "checking_resources": "check_verifier_resource_assignment",
-            "resource_rejected": "revise_verifier_resource_assignment",
-            "resource_confirmed": "commit_verifier_resource_assignment",
-            "verification": "verification",
+            "select_resources": "lock_select_resources",
+            "verification": "select_verifier",
             "revise_exploration": "queue_exploration_feedback",
-            "verification_complete": "publish_verification_result",
+            "verification_complete": "publish_result",
         },
     )
     graph.add_edge("create_verifier_workgroup", "study_verification_criteria")
     graph.add_edge("study_verification_criteria", "fork_verifier")
     graph.add_edge("fork_verifier", "route_verification_stage")
-    graph.add_edge("wait_verifier_resource_quota", "select_verifier_resources")
-    graph.add_edge("select_verifier_resources", "route_verification_stage")
-    graph.add_edge("check_verifier_resource_assignment", "route_verification_stage")
-    graph.add_edge("revise_verifier_resource_assignment", "route_verification_stage")
-    graph.add_edge("commit_verifier_resource_assignment", "route_verification_stage")
-    graph.add_edge("verification", "route_verification_stage")
+    graph.add_edge("lock_select_resources", "select_verifier_resources")
+    graph.add_edge("select_verifier_resources", "wait_for_settle")
+    graph.add_edge("select_verifier", "verification")
+    graph.add_edge("verification", "wait_for_settle")
+    graph.add_edge("wait_for_settle", "is_tool_submission")
+    graph.add_conditional_edges(
+        "is_tool_submission",
+        lambda workflow_state: workflow_state.get(
+            "next_verification_submission_stage", "exceed_limit_try"
+        ),
+        {
+            "unlock_select_resources": "unlock_select_resources",
+            "select_verifier_resources": "select_verifier_resources",
+            "publish_result": "publish_result",
+            "verification": "verification",
+            "exceed_limit_try": "exceed_limit_try",
+        },
+    )
+    graph.add_edge("unlock_select_resources", END)
+    graph.add_edge("exceed_limit_try", END)
+    graph.add_edge("publish_result", "queue_exploration_feedback")
     graph.add_edge("queue_exploration_feedback", END)
-    graph.add_edge("publish_verification_result", END)
     return graph

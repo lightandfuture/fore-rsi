@@ -48,7 +48,7 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #             |                            +--[fork_2] --> route_exploration_stage[select_direction]
     #             |                            +--[fork_3] --> route_exploration_stage[select_direction]
     #             |                            +--[fork_4] --> route_exploration_stage[select_direction]
-    #             +--[select_direction] --> lock_direction_quota
+    #             +--[select_direction] --> lock_select_direction
     #             |                            --> exploration_direction (mcp: produce candidate direction)
     #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
     #                                                --> [is] --> route_exploration_stage[checking_direction]
@@ -56,13 +56,13 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #                                                --> [exceed limit try] --> route_exploration_stage[switch_exploration][create_explorer]
     #             +--[checking_direction] ------> check_exploration_direction (mcp: produce agreement)
     #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
-    #                                                --> [is] --> add_to_direction_pool
-    #                                                        --> [agree] --> route_exploration_stage[exploration]
+    #                                                --> [is] --> update_direction_pool
+    #                                                        --> [agree] --> unlock_select_direction --> route_exploration_stage[exploration]
     #                                                        --> [dis_agree]  --> exploration_direction (with check feedback)
     #                                                        --> [exceed explore try] --> reduce_quota --> END
     #             |                                  --> [not]--> check_exploration_direction
     #                                                --> [exceed limit try] --> route_exploration_stage[switch_exploration][create_explorer]
-    #             +--[exploration] ------------> exploration (exploring and coding)
+    #             +--[exploration] ------------>  [switch_exploration] --> exploration (exploring and coding)
     #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
     #                                                --> [is] --> route_exploration_stage[checking]
     #             |                                  --> [not]--> exploration
@@ -80,8 +80,7 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     #             +--[switch_exploration] ----> check_exploration_switch
     #                                          +--[feedback_received / preempt]
     #                                          |      --> preempt_explorer
-    #                                          |      --> wait_for_explorer_preempt
-    #                                          |      --> route_exploration_stage[exploration]
+    #                                          |      --> wait_for_explorer_preempt --> continue (original flow)
     #                                          +--[create_explorer: quota, no queue]
     #                                          |      --> create_workgroup
     #                                          |      --> fork_explorer

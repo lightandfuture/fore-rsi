@@ -33,13 +33,13 @@ def build_initial_explorer_subflow(workflow: "InferenceWorkflow") -> StateGraph:
             agent_config=workflow.default_agent_config,
         ),
     )
-    graph.add_node("study_initial_context", ExplorerAgent.study_initial_context)
+    graph.add_node("study_framework", lambda workflow_state: {})
     graph.add_node("wait_for_stage_completion", lambda workflow_state: {})
     graph.add_node("route_stage_completion", lambda workflow_state: {})
 
     graph.add_edge(START, "create_initial_explorer")
-    graph.add_edge("create_initial_explorer", "study_initial_context")
-    graph.add_edge("study_initial_context", "wait_for_stage_completion")
+    graph.add_edge("create_initial_explorer", "study_framework")
+    graph.add_edge("study_framework", "wait_for_stage_completion")
     graph.add_edge("wait_for_stage_completion", "route_stage_completion")
     graph.add_conditional_edges(
         "route_stage_completion",

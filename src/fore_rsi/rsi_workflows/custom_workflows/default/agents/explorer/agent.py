@@ -3,9 +3,8 @@
 
 """Explorer role and workflow stages for the default collaboration workflow."""
 
-from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.base_agent import BaseAgent
@@ -23,17 +22,8 @@ class ExplorerAgent(BaseAgent):
     common_system_prompt_path = (
         Path(__file__).resolve().parents[2] / "prompts" / "common" / "system.j2"
     )
-    common_user_prompt_path = (
-        Path(__file__).resolve().parents[2] / "prompts" / "common" / "user.j2"
-    )
     system_prompt_path = (
         Path(__file__).resolve().parents[2] / "prompts" / "explorer" / "system.j2"
-    )
-    study_initial_context_prompt_path = (
-        Path(__file__).resolve().parents[2]
-        / "prompts"
-        / "explorer"
-        / "study_initial_context.j2"
     )
 
     def __init__(
@@ -57,22 +47,3 @@ class ExplorerAgent(BaseAgent):
                 render_prompt(self.system_prompt_path, prompt_context),
             ]
         )
-
-    @staticmethod
-    async def study_initial_context(workflow_state: Mapping[str, object]) -> dict[str, object]:
-        """Study the task context before defining the initial baseline."""
-        explorer_agent = cast(ExplorerAgent, workflow_state["agent"])
-        prompt_context = {
-            "task_revision": workflow_state["task_revision"],
-            "previous_task_revisions": workflow_state.get(
-                "previous_task_revisions", []
-            ),
-        }
-        user_prompt = merge_prompts(
-            [
-                render_prompt(ExplorerAgent.common_user_prompt_path),
-                render_prompt(ExplorerAgent.study_initial_context_prompt_path, prompt_context),
-            ]
-        )
-        await explorer_agent.send_message(user_prompt, mode="queue")
-        return {}

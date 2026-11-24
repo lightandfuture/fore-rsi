@@ -31,6 +31,9 @@ from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general_subflow im
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.verification_subflow import (
     build_verification_subflow,
 )
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.watchdog_subflow import (
+    build_watchdog_subflow,
+)
 from fore_rsi.rsi_workflows.workflow_runtimes.task import Task, TaskSubmission
 
 
@@ -97,6 +100,10 @@ class DefaultWorkflow(BaseWorkflow):
             "run_verification_area",
             build_verification_subflow(self).compile(),
         )
+        graph.add_node(
+            "run_watchdog_area",
+            build_watchdog_subflow(self).compile(),
+        )
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
@@ -150,6 +157,7 @@ class DefaultWorkflow(BaseWorkflow):
         #
         graph.add_edge("initialize_first_task", "run_exploration_area")
         graph.add_edge("initialize_first_task", "run_verification_area")
+        graph.add_edge("initialize_first_task", "run_watchdog_area")
         graph.add_edge("update_task_context", "wait_for_task_submission")
 
         # run_exploration_area --> route_workflow_stage
@@ -170,9 +178,11 @@ class DefaultWorkflow(BaseWorkflow):
             {
                 "exploration": "run_exploration_area",
                 "verification": "run_verification_area",
+                "watchdog": "run_watchdog_area",
                 "wait_for_task_submission": "wait_for_task_submission",
                 "finish": END,
             },
         )
         graph.add_edge("run_exploration_area", "route_workflow_stage")
         graph.add_edge("run_verification_area", "route_workflow_stage")
+        graph.add_edge("run_watchdog_area", "route_workflow_stage")

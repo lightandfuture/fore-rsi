@@ -37,52 +37,60 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         graph.add_node(node_name, lambda workflow_state: {})
 
     # START --> route_exploration_stage
-    #             +--[initialize_explorer] --> create_workgroup
+    #             +--[initialize_explorer] --> create_workgroup (explorer + checker)
     #             |                            |
     #             |                            v
-    #             |                      study_framework
+    #             |                      explorer: study_framework
     #             |                            |
     #             |                            v
-    #             |                      fork_explorer [seed = study_framework, forks = 4]
-    #             |                            +--[fork_1] --> route_exploration_stage
-    #             |                            +--[fork_2] --> route_exploration_stage
-    #             |                            +--[fork_3] --> route_exploration_stage
-    #             |                            +--[fork_4] --> route_exploration_stage
-    #             +--[select_direction] ------> wait_direction_quota
-    #             |                            --> exploration_direction
-    #             |                            --> route_exploration_stage
-    #             +--[checking_direction] ------> check_exploration_direction
-    #             |                            --> route_exploration_stage
-    #             +--[direction_rejected] ----> revise_exploration_direction
-    #             |                            --> route_exploration_stage
-    #             +--[direction_confirmed] ---> add_to_exploration_direction_pool
-    #             |                            --> route_exploration_stage
-    #             +--[exploration] ------------> exploration
+    #             |                      fork_explorer [seed = study_framework, quota = 4]
+    #             |                            +--[fork_1] --> route_exploration_stage[select_direction]
+    #             |                            +--[fork_2] --> route_exploration_stage[select_direction]
+    #             |                            +--[fork_3] --> route_exploration_stage[select_direction]
+    #             |                            +--[fork_4] --> route_exploration_stage[select_direction]
+    #             +--[select_direction] --> lock_direction_quota
+    #             |                            --> exploration_direction (mcp: produce candidate direction)
+    #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
+    #                                                --> [is] --> route_exploration_stage[checking_direction]
+    #             |                                  --> [not]--> exploration_direction
+    #                                                --> [exceed limit try] --> route_exploration_stage[switch_exploration][create_explorer]
+    #             +--[checking_direction] ------> check_exploration_direction (mcp: produce agreement)
+    #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
+    #                                                --> [is] --> add_to_direction_pool
+    #                                                        --> [agree] --> route_exploration_stage[exploration]
+    #                                                        --> [dis_agree]  --> exploration_direction (with check feedback)
+    #                                                        --> [exceed explore try] --> reduce_quota --> END
+    #             |                                  --> [not]--> check_exploration_direction
+    #                                                --> [exceed limit try] --> route_exploration_stage[switch_exploration][create_explorer]
+    #             +--[exploration] ------------> exploration (exploring and coding)
+    #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
+    #                                                --> [is] --> route_exploration_stage[checking]
+    #             |                                  --> [not]--> exploration
+    #                                                --> [exceed limit try] --> update_direction_pool --> [switch_exploration][create_explorer]
     #             |                            --> route_exploration_stage
     #             +--[checking] ---------------> check_exploration
-    #             |                            --> route_exploration_stage
-    #             +--[revise_exploration] ----> revise_exploration
-    #             |                            --> route_exploration_stage
-    #             +--[submit_for_verification] -> queue_verification_request
-    #                                          +--> END
-    #                                          +--> route_exploration_stage
+    #                                          --> wait_for_settle --> [switch_exploration] --> is_tool_submission
+    #                                                --> [is] --> update_direction_pool
+    #                                                        --> [agree] --> route_exploration_stage[submit_for_verification] --> END[verification]
+    #                                                                    --> switch_exploration[create_explorer/wake_explorer]
+    #                                                        --> [dis_agree]  --> exploration (with check feedback)
+    #                                                        --> [exceed explore try] --> reduce_quota --> END
+    #             |                                  --> [not]--> check_exploration
+    #                                                --> [exceed limit try] --> reduce_quota --> END
     #             +--[switch_exploration] ----> check_exploration_switch
     #                                          +--[feedback_received / preempt]
     #                                          |      --> preempt_explorer
-    #                                          |      --> wait_for_explorer_attempt_end
-    #                                          |      --> route_exploration_stage
+    #                                          |      --> wait_for_explorer_preempt
+    #                                          |      --> route_exploration_stage[exploration]
     #                                          +--[create_explorer: quota, no queue]
     #                                          |      --> create_workgroup
     #                                          |      --> fork_explorer
-    #                                          |      --> route_exploration_stage
-    #                                          +--[wake_explorer: queue]
-    #                                          |      --> wake_explorer (blocked)
-    #                                          |      --> route_exploration_stage
+    #                                          |      --> route_exploration_stage[select_direction]
     #                                          +--[release_explorer_slot]
     #                                          |      --> release_explorer_slot
-    #                                          |      --> route_exploration_stage
+    #                                          |      --> wait_for_explorer_slot --> continue (original flow)
     #                                          +--[no_switch]
-    #                                                 --> route_exploration_stage
+    #                                                 --> continue (original flow)
     graph.add_edge(START, "route_exploration_stage")
     graph.add_conditional_edges(
         "route_exploration_stage",

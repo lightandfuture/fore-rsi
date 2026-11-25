@@ -19,8 +19,9 @@ def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                   --> collect_agent_sessions
                   --> collect_task_artifacts
                   --> review_workflow (MCP: inspect sessions and artifacts, submit review)
-                  --> wait_for_settle_and_tool_subflow[A=watchdog_action,B=review_workflow,C=END]
+                  --> wait_for_settle_and_tool_subflow[A=watchdog_action,B=review_workflow,C=exit_node]
     watchdog_action --> send_reminders --> publish_watchdog_report
     --> publish_watchdog_knowledge --> wait_for_watchdog_timer
+    exit_node --> END
     """
     return StateGraph(dict)

@@ -7,7 +7,7 @@ import asyncio
 from functools import partial
 from pathlib import Path
 
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 
 from fore_rsi.config import AgentConfig, WorkflowConfig
 from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
@@ -15,6 +15,7 @@ from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
+    exit_node,
     wait_for_task_submission,
 )
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.wait_for_settle_and_tool_subflow import (
@@ -66,13 +67,14 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_node("wait_for_task_submission", partial(wait_for_task_submission, self))
         graph.add_node("publish_task", self.task.publish_task)
         graph.add_node("update_agent_scheduler", self.agent_scheduler.update_agent_scheduler)
+        graph.add_node("exit_node", partial(exit_node, self, graph_name=self.workflow_name))
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
         """Add task intake, initialization, area routing, and finish edges.
 
         START --> create_coordinator
                      +--[have_task] ----> parse_task
-                     |                    --> wait_for_settle_and_tool_subflow[A=publish_task,B=parse_task,C=END]
+                     |                    --> wait_for_settle_and_tool_subflow[A=wait_for_task_submission,B=parse_task,C=exit_node]
                      +--[not_have_task] -> wait_for_task_submission
                                               --> publish_task
                                               --> wait_for_task_submission
@@ -84,16 +86,17 @@ class DefaultWorkflow(BaseWorkflow):
                                         +--> run_watchdog_area (1)
               +--[update_task]--> send_message_to_agents --> wait_for_task_submission
 
-        run_exploration_area --> route_workflow_stage
-        run_experiment_area --> route_workflow_stage
-        run_watchdog_area --> route_workflow_stage
+        run_exploration_area: update_code_pool           --[Command.PARENT]--> route_workflow_stage[experiment]
+        run_experiment_area:  queue_exploration_feedback --[Command.PARENT]--> route_workflow_stage[exploration]
 
         route_workflow_stage
               +--[exploration] -> run_exploration_area
               +--[experiment] -> run_experiment_area
               +--[watchdog] -> run_watchdog_area
               +--[wait_for_task_submission]
-              +--[finish]       -> END
+              +--[finish]       -> exit_node
+
+        exit_node --> END
         """
         coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
         graph.add_edge(START, coordinator_node_name)
@@ -103,3 +106,14 @@ class DefaultWorkflow(BaseWorkflow):
             {"have_task": "parse_task", "not_have_task": "wait_for_task_submission"},
         )
         graph.add_edge("parse_task", "wait_for_settle_and_tool_subflow")
+        graph.add_conditional_edges(
+            "wait_for_settle_and_tool_subflow",
+            lambda state: state["tool_submission_status"],
+            {
+                "submitted": "wait_for_task_submission",
+                "not_submitted": "parse_task",
+                "exceed_limit_try": "exit_node",
+            },
+        )
+        graph.add_edge("wait_for_task_submission", "publish_task")
+        graph.add_edge("exit_node", END)

@@ -44,13 +44,13 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                                                      --> release_explorer_slot
                                                      --> route_exploration_stage[wake_explorer/create_explorer]
                 +--[submit_to_experiment] --> update_direction_pool
-                                             --> update_code_pool --> END[experiment]
+                                              --> update_code_pool --[Command.PARENT]--> route_workflow_stage[experiment]
 
     direction_check_result
         +--[direction_confirmed] --> update_direction_pool --> route_exploration_stage[exploration]
         +--[direction_rejected]  --> exploration_direction
         +--[exceed_limit_try]    --> retire
 
-    retire --> retire_workgroup --> END[finish]
+    retire --> retire_workgroup --> exit_node --> END
     """
     return StateGraph(dict)

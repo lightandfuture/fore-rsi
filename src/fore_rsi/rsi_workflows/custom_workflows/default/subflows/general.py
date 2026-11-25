@@ -11,13 +11,14 @@ from fore_rsi.rsi_workflows.workflow_runtimes.task import TaskSubmission
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
 
+
 async def wait_for_task_submission(
     workflow: "DefaultWorkflow",
     workflow_state: Mapping[str, object],
 ) -> dict[str, object]:
-    """Wait for and consume the next Coordinator task submission owned by the Workflow."""
-    del workflow_state
-    return {"task_submission": await workflow.task_submission_queue.get()}
+    """Consume the next queued Coordinator submission and return it with the existing workflow state."""
+    task_submission = await workflow.task_submission_queue.get()
+    return {**workflow_state, "task_submission": task_submission}
 
 
 async def enqueue_task_submission(

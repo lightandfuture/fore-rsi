@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import register_agent_tool
-from fore_rsi.rsi_workflows.base_agent import BaseAgent
+from fore_rsi.rsi_workflows.base_agent import BaseAgent, ExpectedToolCalls
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator.tools import (
     submit_task,
 )
@@ -39,6 +39,7 @@ class CoordinatorAgent(BaseAgent):
     parse_task_prompt_path = (
         Path(__file__).resolve().parents[2] / "prompts" / "coordinator" / "parse_task.j2"
     )
+    parse_task_tools = ExpectedToolCalls(step="parse_task", tools=frozenset({submit_task.__name__}))
 
     def __init__(
         self,
@@ -83,4 +84,7 @@ class CoordinatorAgent(BaseAgent):
                 render_prompt(CoordinatorAgent.parse_task_prompt_path, prompt_context),
             ]
         )
-        await coordinator_agent.send_message(user_prompt, mode="queue")
+        await coordinator_agent.send_message(
+            user_prompt,
+            expected_tool_calls=coordinator_agent.parse_task_tools,
+        )

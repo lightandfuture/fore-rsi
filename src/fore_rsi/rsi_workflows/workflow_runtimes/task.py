@@ -75,11 +75,10 @@ class Task:
         return self.task_revisions[-1] if self.task_revisions else None
 
     def publish_task(self, workflow_state: Mapping[str, object]) -> dict[str, object]:
-        """Persist the submitted task and return current and prior revision paths to the graph."""
+        """Publish the submitted task and return the workflow state with its revision metadata."""
         task_submission = workflow_state["task_submission"]
         current_task = self.current_task
-        is_first_task_submission = current_task is None
-        # LangGraph may replay this node after a downstream failure; reuse the completed revision.
+        # Reuse the revision on replay so both the file and the initialization decision stay the same.
         if current_task is not None and current_task.task_submission == task_submission:
             task_revision = current_task
         else:
@@ -92,11 +91,11 @@ class Task:
             )
             self.task_revisions.append(task_revision)
 
-        previous_task_revisions = self.task_revisions[:-1]
         return {
+            **workflow_state,
             "task_revision": task_revision,
-            "previous_task_revisions": previous_task_revisions,
-            "is_first_task_submission": is_first_task_submission,
+            "previous_task_revisions": self.task_revisions[:-1],
+            "is_first_task_submission": task_revision.revision_number == 1,
         }
 
     def write_task_revision(

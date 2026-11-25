@@ -4,8 +4,10 @@
 """Common role interface for workflow agents backed by native harnesses."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from functools import wraps
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from fore_rsi.config import AgentConfig
 from fore_rsi.rsi_workflows.agent_runtimes import AgentTool, create_agent_runtime
@@ -29,6 +31,35 @@ class AgentState(StrEnum):
     FAILED = "failed"
 
 
+@dataclass(frozen=True)
+class ExpectedToolCalls:
+    """MCP tools a step must call successfully; set require_all=False for alternatives."""
+
+    step: str
+    tools: frozenset[str]
+    require_all: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.tools:
+            raise ValueError(f"Step {self.step!r} must name at least one expected tool.")
+
+
+@dataclass
+class StepToolCalls:
+    """Track one agent's successful expected tools for the current prompt in a workflow step."""
+
+    expected: ExpectedToolCalls
+    attempt_number: int
+    successful_tools: set[str] = field(default_factory=set)
+    outcome: Literal["submitted", "not_submitted", "exceed_limit_try"] | None = None
+
+    def has_expected_tool_calls(self) -> bool:
+        """Tell the settle subflow whether the successful tool calls satisfy this step."""
+        if self.expected.require_all:
+            return self.expected.tools <= self.successful_tools
+        return not self.expected.tools.isdisjoint(self.successful_tools)
+
+
 class BaseAgent:
     """Base class for role-specific agents with a bound execution runtime."""
 
@@ -48,19 +79,54 @@ class BaseAgent:
         self.workgroup = workgroup
         self.system_prompt: str | None = None
         self.state = AgentState.READY
+        self.step_tool_calls: StepToolCalls | None = None
         self.agent_runtime = create_agent_runtime(
             agent_config, workflow_directory=workflow.session_directory,
             workgroup_name=workgroup.workgroup_name, agent_name=agent_name,
-            tool_mcp_host=workflow.tool_mcp_host, tools=tools,
+            tool_mcp_host=workflow.tool_mcp_host,
+            tools=[self.observe_tool_submission(tool) for tool in tools],
         )
 
     async def send_message(
         self,
         message: str,
         mode: MessageDeliveryMode = "queue",
+        *,
+        expected_tool_calls: ExpectedToolCalls | None = None,
     ) -> None:
-        """Send one workflow message through the selected delivery mode."""
+        """Bind the step's expected tool calls before dispatching its prompt."""
+        previous = self.step_tool_calls
+        if expected_tool_calls is not None:
+            attempt_number = 1
+            if (
+                previous is not None
+                and previous.outcome == "not_submitted"
+                and previous.expected == expected_tool_calls
+            ):
+                attempt_number = previous.attempt_number + 1
+            self.step_tool_calls = StepToolCalls(expected_tool_calls, attempt_number)
+        elif mode == "queue" and previous is not None and previous.outcome is not None:
+            # Discard a finished step's result without disarming a still-running turn.
+            self.step_tool_calls = None
         await self.agent_runtime.send_message(message, mode=mode)
+
+    def observe_tool_submission(self, tool: AgentTool) -> AgentTool:
+        """Leave the payload with its owner and record successful expected calls for this member."""
+
+        @wraps(tool)
+        async def observed(*args: object, **kwargs: object) -> dict[str, object]:
+            # A tool finishing late belongs to the prompt that started the call.
+            step_tool_calls = self.step_tool_calls
+            result = await tool(*args, **kwargs)
+            if (
+                step_tool_calls is not None
+                and step_tool_calls.outcome is None
+                and tool.__name__ in step_tool_calls.expected.tools
+            ):
+                step_tool_calls.successful_tools.add(tool.__name__)
+            return result
+
+        return observed
 
     def get_full_name(self) -> str:
         """Return the agent's workgroup-qualified name within its workflow."""

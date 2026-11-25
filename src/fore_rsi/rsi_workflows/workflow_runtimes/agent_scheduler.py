@@ -114,11 +114,10 @@ class AgentScheduler:
 
     async def update_agent_scheduler(
         self, workflow_state: Mapping[str, object]
-    ) -> dict[str, object]:
-        """Apply the task's AgentTeam quota declaration as a workflow node."""
+    ) -> None:
+        """Apply the published task's role quotas without replacing the state used for routing."""
         task_submission = workflow_state["task_submission"]
         await self.set_role_quotas(task_submission.agent_team.roles)
-        return {}
 
     async def create_agent(
         self,

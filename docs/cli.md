@@ -17,6 +17,7 @@ This example uses the task file from the ForeRSI repository root. All startup op
 - `--harness NAME` selects the native agent CLI: `pi`, `codex`, or `claude` (Claude Code). New sessions default to Pi; resuming by name keeps the saved backend.
 - `--model MODEL` selects the entry agent's model (the Coordinator in the default workflow). Use a model name accepted by the backend, or omit it to keep the native selection.
 - `--effort LEVEL` sets reasoning effort for that agent, independently of `--model`. For example: `fore-rsi --harness claude --model sonnet --effort high`. Supported levels depend on the backend and model; omitting the option keeps the native setting.
+- `--max-attempts N` allows up to N prompt attempts for a required tool submission, including the first (default: 3). Use `1` for no retries.
 - `--session NAME` names the ForeRSI session to create or resume.
 - `--task FILE` provides a Markdown task file. Omit it to describe the task in the conversation.
 - `--cache-dir PATH` chooses workflow storage for a new session (default: `./cache`). Relative paths use the current project's Git repository root, or the startup directory outside Git; absolute paths are used directly. Workflow data is stored in its `workflows/` subdirectory. Each session name keeps its original storage location for the current user, even when started again from another directory.
@@ -75,7 +76,7 @@ fore-rsi delete --session sglang-throughput
 
 Deletion removes the session's native agent conversations along with its workflow data. It preserves the default session `default`, project files outside the session directory, and the native CLI's personal settings and history outside ForeRSI. On Windows, exit the running workflow before deleting its session.
 
-`--workflow`, `--harness`, `--model`, `--effort`, and `--task` apply only to `run`. `--cache-dir` applies to `run`, `list`, `stop`, and `delete`.
+`--workflow`, `--harness`, `--model`, `--effort`, `--max-attempts`, and `--task` apply only to `run`. `--cache-dir` applies to `run`, `list`, `stop`, and `delete`.
 
 ### Diagnostic logs
 
@@ -107,6 +108,7 @@ fore-rsi --session sglang-throughput \
 - `--harness NAME` 选择运行 Agent 的原生 CLI：`pi`、`codex` 或 `claude`（Claude Code）。新会话默认使用 Pi，按名称恢复时沿用原来的后端。
 - `--model MODEL` 只指定入口 Agent（默认工作流的 Coordinator）使用的模型。名称沿用所选后端的写法；省略时由后端选择。
 - `--effort LEVEL` 设置该 Agent 的推理强度，可以单独使用，也可以搭配模型，例如 `fore-rsi --harness claude --model sonnet --effort high`。可用档位取决于后端和模型，省略时沿用原生设置。
+- `--max-attempts N` 设置每次要求工具提交时最多可尝试多少次，含首次，默认 3 次。设为 `1` 则不重试。
 - `--session NAME` 指定要创建或恢复的 ForeRSI 会话名称。
 - `--task FILE` 提供 Markdown 任务文件。省略时，在对话中直接描述任务。
 - `--cache-dir PATH` 指定新会话的工作流存储目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流数据保存在其中的 `workflows/` 子目录。当前用户的每个会话名称绑定首次确定的存储位置，之后即使换目录启动，也沿用原位置。
@@ -165,7 +167,7 @@ fore-rsi delete --session sglang-throughput
 
 删除会话会一并删除其中各 Agent 的原生对话记录。默认会话 `default`、会话目录之外的项目文件，以及原生 CLI 在 ForeRSI 之外保存的个人配置和历史记录都会保留。Windows 上需先退出运行中的工作流，再删除会话。
 
-`--workflow`、`--harness`、`--model`、`--effort` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run`、`list`、`stop` 和 `delete`。
+`--workflow`、`--harness`、`--model`、`--effort`、`--max-attempts` 和 `--task` 仅用于 `run`。`--cache-dir` 用于 `run`、`list`、`stop` 和 `delete`。
 
 ### 诊断日志
 

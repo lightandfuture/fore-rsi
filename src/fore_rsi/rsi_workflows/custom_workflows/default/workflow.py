@@ -14,6 +14,9 @@ from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
+    wait_for_task_submission,
+)
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.wait_for_settle_and_tool_subflow import (
     build_wait_for_settle_and_tool_subflow,
 )
@@ -58,8 +61,11 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
         graph.add_node(
             "wait_for_settle_and_tool_subflow",
-            build_wait_for_settle_and_tool_subflow().compile(),
+            build_wait_for_settle_and_tool_subflow(max_attempts=self.config.max_attempts).compile(),
         )
+        graph.add_node("wait_for_task_submission", partial(wait_for_task_submission, self))
+        graph.add_node("publish_task", self.task.publish_task)
+        graph.add_node("update_agent_scheduler", self.agent_scheduler.update_agent_scheduler)
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
         """Add task intake, initialization, area routing, and finish edges.
@@ -91,3 +97,9 @@ class DefaultWorkflow(BaseWorkflow):
         """
         coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
         graph.add_edge(START, coordinator_node_name)
+        graph.add_conditional_edges(
+            coordinator_node_name,
+            lambda state: "have_task" if state["startup_task_file"] is not None else "not_have_task",
+            {"have_task": "parse_task", "not_have_task": "wait_for_task_submission"},
+        )
+        graph.add_edge("parse_task", "wait_for_settle_and_tool_subflow")

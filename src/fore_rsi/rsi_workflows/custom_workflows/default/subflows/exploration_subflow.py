@@ -24,10 +24,7 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                 |                            --> exploration_direction (MCP)
                 |                            --> wait_for_settle_and_tool_subflow[A=checking_direction,B=exploration_direction,C=retire]
                 +--[checking_direction] ----> check_exploration_direction (MCP)
-                |                            --> wait_for_settle_and_tool_subflow[A=route_exploration_stage[direction_confirmed/direction_rejected/exceed_limit_try],B=check_exploration_direction,C=retire]
-                +--[direction_confirmed] --> update_direction_pool
-                |                            --> route_exploration_stage[exploration]
-                +--[direction_rejected] --> exploration_direction
+                |                            --> wait_for_settle_and_tool_subflow[A=direction_check_result,B=check_exploration_direction,C=retire]
                 +--[exploration] ----------> [check_exploration_switch]
                 |                                 --> exploration (MCP, including update_direction_pool)
                 |                                 --> wait_for_settle_and_tool_subflow[A=checking,B=exploration,C=retire]
@@ -48,6 +45,11 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                                                      --> route_exploration_stage[wake_explorer/create_explorer]
                 +--[submit_to_verification] --> update_direction_pool
                                               --> update_code_pool --> END[verification]
+
+    direction_check_result
+        +--[direction_confirmed] --> update_direction_pool --> route_exploration_stage[exploration]
+        +--[direction_rejected]  --> exploration_direction
+        +--[exceed_limit_try]    --> retire
 
     retire --> retire_workgroup --> END[finish]
     """

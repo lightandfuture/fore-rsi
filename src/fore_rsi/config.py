@@ -47,6 +47,13 @@ class WorkflowConfig:
     # Set reasoning effort for the workflow's entry agent only. Omit to keep the backend's setting.
     entry_effort: Annotated[ReasoningEffort | None, arg(name="effort", prefix_name=False, help_behavior_hint="")] = None
 
+    # Maximum prompt attempts per required tool submission, including the first attempt.
+    max_attempts: Annotated[int, arg(prefix_name=False)] = 3
+
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError("--max-attempts must be at least 1.")
+
     @property
     def harness_or_default(self) -> str:
         """Resolve the backend for a new workflow session."""

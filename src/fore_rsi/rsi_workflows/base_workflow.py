@@ -55,6 +55,8 @@ class BaseWorkflow(ABC):
 
     def build_workflow(self) -> StateGraph:
         """Create this Workflow's graph from its node and edge declarations."""
+        # LangGraph stores a plain dict as one root value. Returning a dict replaces
+        # the whole state; returning None leaves it unchanged and edges still run.
         graph = StateGraph(dict)
         self.build_workflow_nodes(graph)
         self.build_workflow_edges(graph)
@@ -107,7 +109,7 @@ class BaseWorkflow(ABC):
         agent_name: str | None = None,
         priority: SchedulingPriority = SchedulingPriority.LOW,
     ) -> dict[str, object]:
-        """Request Scheduler-owned creation of one Agent from workflow context."""
+        """Return the incoming workflow state with the newly scheduled Agent and its names."""
         workgroup_name = workgroup_name or workflow_state.get("workgroup_name")
         if agent_name is None:
             agent_name = str(
@@ -115,7 +117,7 @@ class BaseWorkflow(ABC):
                 or self.next_agent_name(agent_class.role_name)
             )
         # Scheduler owns quota admission and creation; Workflow supplies context only.
-        return await self.agent_scheduler.create_agent(
+        agent_fields = await self.agent_scheduler.create_agent(
             agent_class=agent_class,
             agent_name=agent_name,
             workgroup_name=workgroup_name,
@@ -125,6 +127,7 @@ class BaseWorkflow(ABC):
             is_entry_agent=bool(workflow_state.get("is_entry", False)),
             priority=priority,
         )
+        return {**workflow_state, **agent_fields}
 
     def next_agent_name(self, role_name: str) -> str:
         """Return a workflow-wide unique role-based instance name."""

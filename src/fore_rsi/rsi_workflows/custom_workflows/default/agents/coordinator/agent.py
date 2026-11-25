@@ -3,7 +3,6 @@
 
 """Coordinator role for the default collaboration workflow."""
 
-from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -74,8 +73,8 @@ class CoordinatorAgent(BaseAgent):
         )
 
     @staticmethod
-    async def parse_task(workflow_state: Mapping[str, object]) -> dict[str, object]:
-        """Ask the Coordinator to parse the startup task declaration."""
+    async def parse_task(workflow_state: dict[str, object]) -> None:
+        """Queue the startup prompt without changing graph state; submit_task delivers the result."""
         coordinator_agent = cast(CoordinatorAgent, workflow_state["agent"])
         prompt_context = {"startup_task_file": workflow_state["startup_task_file"]}
         user_prompt = merge_prompts(
@@ -85,4 +84,3 @@ class CoordinatorAgent(BaseAgent):
             ]
         )
         await coordinator_agent.send_message(user_prompt, mode="queue")
-        return {}

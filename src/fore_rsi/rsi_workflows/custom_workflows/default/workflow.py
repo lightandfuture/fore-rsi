@@ -14,8 +14,8 @@ from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.agent_turn import (
-    wait_for_settle,
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.wait_for_settle_and_tool_subflow import (
+    build_wait_for_settle_and_tool_subflow,
 )
 from fore_rsi.rsi_workflows.workflow_runtimes.task import Task, TaskSubmission
 
@@ -56,13 +56,17 @@ class DefaultWorkflow(BaseWorkflow):
             ),
         )
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
+        graph.add_node(
+            "wait_for_settle_and_tool_subflow",
+            build_wait_for_settle_and_tool_subflow().compile(),
+        )
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
         """Add task intake, initialization, area routing, and finish edges.
 
         START --> create_coordinator
                      +--[have_task] ----> parse_task
-                     |                    --> wait_for_settle[A=publish_task,B=parse_task]
+                     |                    --> wait_for_settle_and_tool_subflow[A=publish_task,B=parse_task,C=END]
                      +--[not_have_task] -> wait_for_task_submission
                                               --> publish_task
                                               --> wait_for_task_submission

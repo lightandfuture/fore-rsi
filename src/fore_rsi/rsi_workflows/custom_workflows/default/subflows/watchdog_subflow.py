@@ -19,7 +19,7 @@ def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                   --> collect_agent_sessions
                   --> collect_task_artifacts
                   --> review_workflow (MCP: inspect sessions and artifacts, submit review)
-                  --> wait_for_settle[A=watchdog_action,B=review_workflow]
+                  --> wait_for_settle_and_tool_subflow[A=watchdog_action,B=review_workflow,C=END]
     watchdog_action --> send_reminders --> publish_watchdog_report
     --> publish_watchdog_knowledge --> wait_for_watchdog_timer
     """

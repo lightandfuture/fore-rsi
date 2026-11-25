@@ -7,12 +7,28 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph import END, START, StateGraph
 
+from .agent_turn import wait_for_settle
+
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
 
 
 def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
-    """Build the periodic Watchdog subflow for workflow-wide progress checks."""
+    """Build the periodic Watchdog subflow for workflow-wide progress checks.
+
+    START --> create_watchdog
+                -> wait_for_watchdog_timer
+                --> collect_agent_sessions
+                --> collect_task_artifacts
+                --> review_workflow (MCP: inspect sessions and artifacts, submit review)
+                --> wait_for_settle[A=watchdog_action,B=review_workflow]
+
+    watchdog_action
+        +--[send_reminders]    --> send_reminders --> END
+        +--[publish_report]    --> publish_watchdog_report --> END
+        +--[publish_knowledge] --> publish_watchdog_knowledge --> END
+        +--[continue_watchdog] --> wait_for_watchdog_timer
+    """
     graph = StateGraph(dict)
     for node_name in (
         "route_watchdog_stage",
@@ -21,37 +37,16 @@ def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         "collect_agent_sessions",
         "collect_task_artifacts",
         "review_workflow",
-        "wait_for_settle",
         "is_tool_submission",
         "exceed_limit_try",
         "watchdog_action",
         "send_reminders",
         "publish_watchdog_report",
+        "publish_watchdog_knowledge",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
+    graph.add_node("wait_for_settle", wait_for_settle)
 
-    # START --> route_watchdog_stage
-    #             +--[initialize_watchdog] --> create_watchdog
-    #             |                            --> wait_for_watchdog_timer
-    #             +--[watchdog_round] -------> wait_for_watchdog_timer
-    #                                          --[timer_fired]
-    #                                          --> collect_agent_sessions
-    #                                          --> collect_task_artifacts
-    #                                          --> review_workflow (MCP: inspect sessions and artifacts, submit review)
-    #                                          --> wait_for_settle --> is_tool_submission
-    #                                              +--[is_tool_submission]
-    #                                              |      --> watchdog_action
-    #                                              +--[not_tool_submission]
-    #                                              |      --> review_workflow
-    #                                              +--[exceed_limit_try]
-    #                                                     --> exceed_limit_try --> END
-    # watchdog_action
-    #       +--[send_reminders]
-    #       |      --> send_reminders --> END
-    #       +--[publish_report]
-    #       |      --> publish_watchdog_report --> END
-    #       +--[continue_watchdog]
-    #       |      --> wait_for_watchdog_timer
     graph.add_edge(START, "route_watchdog_stage")
     graph.add_conditional_edges(
         "route_watchdog_stage",
@@ -93,10 +88,12 @@ def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         {
             "send_reminders": "send_reminders",
             "publish_report": "publish_watchdog_report",
+            "publish_knowledge": "publish_watchdog_knowledge",
             "continue_watchdog": "wait_for_watchdog_timer",
         },
     )
     graph.add_edge("send_reminders", END)
     graph.add_edge("publish_watchdog_report", END)
+    graph.add_edge("publish_watchdog_knowledge", END)
     graph.add_edge("exceed_limit_try", END)
     return graph

@@ -107,18 +107,29 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_node("parse_task", CoordinatorAgent.parse_task)
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
-        """Add task intake, initialization, area routing, and finish edges."""
-        #
-        # START -> create_coordinator
-        #              +--[have_task]--> parse_task --> wait_for_settle --> is_tool_submission -->[is] --> publish_task
-        #                                                                                              --> wait_for_task_submission
-        #                                                                                      -->[not] --> parse_task
-        #                                                                                      -->[exceed limit try] --> END
-        #              |                                    |
-        #              +--[not_have_task]-> wait_for_task_submission --> publish_task
-        #                                                            --> wait_for_task_submission
-        #
-        # publish_task-->update_agent_scheduler
+        """Add task intake, initialization, area routing, and finish edges.
+
+        START --> create_coordinator
+                     +--[have_task] ----> parse_task
+                     |                    --> wait_for_settle[A=publish_task,B=parse_task]
+                     +--[not_have_task] -> wait_for_task_submission
+                                              --> publish_task
+                                              --> wait_for_task_submission
+
+        publish_task --> update_agent_scheduler
+                              +--[initialize] --> initialize_first_task
+                              |                    +--> run_exploration_area
+                              |                    +--> run_verification_area
+                              |                    +--> run_watchdog_area
+                              +--[update_task] --> wait_for_task_submission
+
+        route_workflow_stage
+            +--[exploration]          -> run_exploration_area
+            +--[verification]         -> run_verification_area
+            +--[watchdog]             -> run_watchdog_area
+            +--[wait_for_task_submission]
+            +--[finish]               -> END
+        """
         coordinator_node_name = f"create_{CoordinatorAgent.role_name.lower()}"
         graph.add_edge(START, coordinator_node_name)
         graph.add_conditional_edges(
@@ -148,28 +159,12 @@ class DefaultWorkflow(BaseWorkflow):
             },
         )
 
-        # update_agent_scheduler
-        #       +--[initialize]--> initialize_first_task
-        #       |                         +--> run_exploration_area
-        #       |                         +--> run_verification_area
-        #                                 +--> run_watchdog_area
-        #       +--[update_task]--> send_message_to_agents --> wait_for_task_submission
-        #
         graph.add_edge("initialize_first_task", "run_exploration_area")
         graph.add_edge("initialize_first_task", "run_verification_area")
         graph.add_edge("initialize_first_task", "run_watchdog_area")
         graph.add_edge("update_task_context", "wait_for_task_submission")
 
-        # run_exploration_area --> route_workflow_stage
-        # run_verification_area --> route_workflow_stage
-        # run_watchdog_area --> route_workflow_stage
-        #
-        # route_workflow_stage
-        #       +--[exploration] -> run_exploration_area
-        #       +--[verification] -> run_verification_area
-        #       +--[watchdog] -> run_watchdog_area
-        #       +--[wait_for_task_submission]
-        #       +--[finish]       -> END
+
         graph.add_conditional_edges(
             "route_workflow_stage",
             lambda workflow_state: workflow_state.get(

@@ -7,12 +7,31 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph import END, START, StateGraph
 
+from .agent_turn import wait_for_settle
+
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
 
 
 def build_verification_subflow(workflow: "DefaultWorkflow") -> StateGraph:
-    """Build the Verifier subflow graph for the default workflow."""
+    """Build the Verifier subflow graph for the default workflow.
+
+    START --> route_verification_stage
+                +--[initialize_verifier] --> create_verifier_workgroup
+                |                            --> study_verification
+                |                            --> fork_verifier [quota = 2]
+                |                                 +--[verifier_i]
+                |                                        --> route_verification_stage[select_resources]
+                +--[select_resources] ------> lock_select_resources
+                |                            --> select_verifier_resources
+                |                            --> wait_for_settle[A=unlock_select_resources,B=select_verifier_resources]
+                +--[verification] ----------> select_verifier
+                                             --> verification (experimenting)
+                                             --> wait_for_settle[A=publish_result,B=verification]
+
+    unlock_select_resources --> END
+    publish_result --> queue_exploration_feedback --> END[exploration]
+    """
     graph = StateGraph(dict)
     for node_name in (
         "route_verification_stage",
@@ -24,37 +43,14 @@ def build_verification_subflow(workflow: "DefaultWorkflow") -> StateGraph:
         "unlock_select_resources",
         "select_verifier",
         "verification",
-        "wait_for_settle",
         "is_tool_submission",
         "exceed_limit_try",
         "publish_result",
         "queue_exploration_feedback",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
+    graph.add_node("wait_for_settle", wait_for_settle)
 
-    # START --> route_verification_stage
-    #             +--[initialize_verifier] --> create_verifier_workgroup
-    #             |                            --> study_verification_criteria
-    #             |                            --> fork_verifier [seed = study_verification_criteria, quota = 2]
-    #             |                                 +--[verifier_1] --> route_verification_stage[select_resources]
-    #             |                                 +--[verifier_2] --> route_verification_stage[select_resources]
-    #             +--[select_resources] ------> lock_select_resources
-    #             |                            --> select_verifier_resources
-    #             |                            --> wait_for_settle --> is_tool_submission
-    #             |                                +--[is_tool_submission]
-    #             |                                |      --> unlock_select_resources --> END
-    #             |                                +--[not_tool_submission]
-    #             |                                |      --> select_verifier_resources
-    #             |                                +--[exceed_limit_try]
-    #             |                                       --> END
-    #             +--[verification] ----------> select_verifier --> verification (experimenting)
-    #             |                            --> wait_for_settle --> is_tool_submission
-    #             |                                +--[is_tool_submission]
-    #             |                                |      --> publish_result --> queue_exploration_feedback --> END[exploration]
-    #             |                                +--[not_tool_submission]
-    #             |                                |      --> verification
-    #             |                                +--[exceed_limit_try]
-    #             |                                       --> END
     graph.add_edge(START, "route_verification_stage")
     graph.add_conditional_edges(
         "route_verification_stage",

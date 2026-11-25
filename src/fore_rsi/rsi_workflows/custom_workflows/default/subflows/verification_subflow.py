@@ -17,15 +17,14 @@ def build_verification_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     START --> route_verification_stage
                 +--[initialize_verifier] --> create_verifier_workgroup
                 |                            --> study_verification
-                |                            --> fork_verifier [quota = 2]
-                |                                 +--[verifier_i]
-                |                                        --> route_verification_stage[select_resources]
+                |                            --> fork_verifier [seed = study_verification, quota = 2]
+                |                                 +--[verifier_1] --> route_verification_stage[select_resources]
+                |                                 +--[verifier_2] --> route_verification_stage[select_resources]
                 +--[select_resources] ------> lock_select_resources
                 |                            --> select_verifier_resources
                 |                            --> wait_for_settle[A=unlock_select_resources,B=select_verifier_resources]
-                +--[verification] ----------> select_verifier
-                                             --> verification (experimenting)
-                                             --> wait_for_settle[A=publish_result,B=verification]
+                +--[verification] ----------> select_verifier (blocking with quota) --> verification (experimenting)
+                |                            --> wait_for_settle[A=publish_result,B=verification]
 
     unlock_select_resources --> END
     publish_result --> queue_exploration_feedback --> END[exploration]

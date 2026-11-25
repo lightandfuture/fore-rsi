@@ -5,11 +5,11 @@
   </picture>
 </h1>
 
-<p align="center">基于 Agent Team 的 RSI 框架，自主并行探索方案、执行工作、验证效果，并以反馈驱动持续改进。</p>
+<p align="center">基于 Agent Team 的 RSI 框架，自主并行探索方案、执行工作、开展实验，并以反馈驱动持续改进。</p>
 
 <p align="center"><a href="README.md">English</a> · 简体中文</p>
 
-ForeRSI 是一个基于 Agent Team 的递归自我改进（Recursive Self-Improvement，RSI）框架。设定目标与约束后，Agent Team 可以自主并行探索方案、协作执行工作、验证效果，并根据反馈调整方案和工作方法，持续推进迭代。
+ForeRSI 是一个基于 Agent Team 的递归自我改进（Recursive Self-Improvement，RSI）框架。设定目标与约束后，Agent Team 可以自主并行探索方案、协作执行工作、开展实验，并根据反馈调整方案和工作方法，持续推进迭代。
 
 ForeRSI 采用去中心化协作理念：Agent 成员直接交流与共享进展，减少信息转发瓶颈，提升并行度，让独立工作持续推进。
 

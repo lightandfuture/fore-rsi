@@ -5,11 +5,11 @@
   </picture>
 </h1>
 
-<p align="center">An RSI framework built on Agent Teams that autonomously explore approaches in parallel, execute work, and verify results, with feedback driving continuous improvement.</p>
+<p align="center">An RSI framework built on Agent Teams that autonomously explore approaches in parallel, execute work, and run experiments, with feedback driving continuous improvement.</p>
 
 <p align="center">English · <a href="README_zh.md">简体中文</a></p>
 
-ForeRSI is a recursive self-improvement (RSI) framework built on Agent Teams. With objectives and constraints defined, teams can autonomously explore approaches in parallel, collaborate on execution, verify results, and refine their approaches and working methods through feedback.
+ForeRSI is a recursive self-improvement (RSI) framework built on Agent Teams. With objectives and constraints defined, teams can autonomously explore approaches in parallel, collaborate on execution, run experiments, and refine their approaches and working methods through feedback.
 
 ForeRSI uses decentralized collaboration: agents communicate directly and share progress, reducing information bottlenecks so independent work can move forward in parallel.
 

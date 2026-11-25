@@ -25,8 +25,8 @@ from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.exploration_subf
 from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_explorer_subflow import (
     build_initial_explorer_subflow,
 )
-from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_verifier_subflow import (
-    build_initial_verifier_subflow,
+from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.initial_experimenter_subflow import (
+    build_initial_experimenter_subflow,
 )
 from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.watchdog_subflow import (
     build_watchdog_subflow,
@@ -37,7 +37,7 @@ from fore_rsi.rsi_workflows.custom_workflows.inference.subflows.work_subflow imp
 
 
 class InferenceWorkflow(DefaultWorkflow):
-    """Run the detailed Explorer, Worker, and Verifier loop for inference optimization."""
+    """Run the detailed Explorer, Worker, and Experimenter loop for inference optimization."""
 
     workflow_name = "inference"
     agent_roles = {**DefaultWorkflow.agent_roles, "Worker": WorkerAgent}
@@ -69,8 +69,8 @@ class InferenceWorkflow(DefaultWorkflow):
             build_initial_explorer_subflow(self).compile(),
         )
         graph.add_node(
-            "initialize_verifier_pool",
-            build_initial_verifier_subflow(self).compile(),
+            "initialize_experimenter_pool",
+            build_initial_experimenter_subflow(self).compile(),
         )
         graph.add_node("update_task_context", lambda workflow_state: {})
         graph.add_node("route_workflow_stage", lambda workflow_state: {})
@@ -108,7 +108,7 @@ class InferenceWorkflow(DefaultWorkflow):
         #                         +---------+                 |
         #                         |         |                 v
         #                         v         v        route_workflow_stage
-        #              initialize_explorer_context  initialize_verifier_pool
+        #              initialize_explorer_context  initialize_experimenter_pool
         #                         |                 +--> END
         #                         v
         #              run_exploration_area                 route_workflow_stage
@@ -145,9 +145,9 @@ class InferenceWorkflow(DefaultWorkflow):
             },
         )
         graph.add_edge("initialize_first_task", "initialize_explorer_context")
-        graph.add_edge("initialize_first_task", "initialize_verifier_pool")
+        graph.add_edge("initialize_first_task", "initialize_experimenter_pool")
         graph.add_edge("initialize_explorer_context", "run_exploration_area")
-        graph.add_edge("initialize_verifier_pool", END)
+        graph.add_edge("initialize_experimenter_pool", END)
         graph.add_edge("update_task_context", "wait_for_task_submission")
         graph.add_conditional_edges(
             "route_workflow_stage",

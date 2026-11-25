@@ -81,9 +81,9 @@ class DefaultWorkflow(BaseWorkflow):
 
         publish_task-->update_agent_scheduler
               +--[initialize]--> initialize_first_task
-              |                         +--> run_exploration_area (4)
-              |                         +--> run_experiment_area (2)
-                                        +--> run_watchdog_area (1)
+              |                         +--> run_exploration_area
+              |                         +--> run_experiment_area
+                                        +--> run_watchdog_area
               +--[update_task]--> send_message_to_agents --> wait_for_task_submission
 
         run_exploration_area: update_code_pool           --[Command.PARENT]--> route_workflow_stage[experiment]

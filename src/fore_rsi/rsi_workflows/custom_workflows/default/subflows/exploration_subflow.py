@@ -5,9 +5,7 @@
 
 from typing import TYPE_CHECKING
 
-from langgraph.graph import END, START, StateGraph
-
-from .agent_turn import wait_for_settle
+from langgraph.graph import StateGraph
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
@@ -53,117 +51,4 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
 
     retire --> retire_workgroup --> END[finish]
     """
-    graph = StateGraph(dict)
-    for node_name in (
-        "route_exploration_stage",
-        "create_workgroup",
-        "study_framework",
-        "fork_explorer",
-        "wait_direction_quota",
-        "exploration_direction",
-        "check_exploration_direction",
-        "add_to_exploration_direction_pool",
-        "revise_exploration_direction",
-        "check_exploration_switch",
-        "preempt_explorer",
-        "wait_for_explorer_attempt_end",
-        "wake_explorer",
-        "exploration",
-        "check_exploration",
-        "update_exploration_direction",
-        "update_exploration_direction_pool",
-        "add_to_exploration_code_pool",
-        "queue_verification_request",
-        "release_explorer_slot",
-        "retire_workgroup",
-        "is_tool_submission",
-        "exceed_limit_try",
-        "exceed_explore_try",
-    ):
-        graph.add_node(node_name, lambda workflow_state: {})
-    graph.add_node("wait_for_settle", wait_for_settle)
-
-    graph.add_edge(START, "route_exploration_stage")
-    graph.add_conditional_edges(
-        "route_exploration_stage",
-        lambda workflow_state: workflow_state.get(
-            "next_exploration_stage",
-            (
-                "initialize_explorer"
-                if workflow_state.get("is_first_task_submission", False)
-                and not workflow_state.get("explorer_context_ready", False)
-                else "exploration"
-            ),
-        ),
-        {
-            "initialize_explorer": "create_workgroup",
-            "select_direction": "wait_direction_quota",
-            "checking_direction": "check_exploration_direction",
-            "direction_rejected": "revise_exploration_direction",
-            "direction_confirmed": "add_to_exploration_direction_pool",
-            "improvement_confirmed": "update_exploration_direction_pool",
-            "switch_exploration": "check_exploration_switch",
-            "exploration": "check_exploration_switch",
-            "continue_exploration": "check_exploration_switch",
-            "checking": "check_exploration",
-            "update_direction": "update_exploration_direction",
-            "update_direction_pool": "update_exploration_direction_pool",
-            "add_to_code_pool": "add_to_exploration_code_pool",
-            "submit_for_verification": "queue_verification_request",
-            "retire": "check_exploration_switch",
-            "create_explorer": "create_workgroup",
-            "finish": END,
-        },
-    )
-    graph.add_edge("create_workgroup", "study_framework")
-    graph.add_edge("study_framework", "fork_explorer")
-    graph.add_edge("fork_explorer", "route_exploration_stage")
-    graph.add_edge("wait_direction_quota", "exploration_direction")
-    graph.add_edge("exploration_direction", "wait_for_settle")
-    graph.add_edge("check_exploration_direction", "wait_for_settle")
-    graph.add_edge("exploration", "wait_for_settle")
-    graph.add_edge("check_exploration", "wait_for_settle")
-    graph.add_edge("wait_for_settle", "check_exploration_switch")
-    graph.add_conditional_edges(
-        "is_tool_submission",
-        lambda workflow_state: workflow_state.get(
-            "next_exploration_submission_stage", "exceed_limit_try"
-        ),
-        {
-            "check_exploration_direction": "check_exploration_direction",
-            "route_exploration_stage": "route_exploration_stage",
-            "check_exploration": "check_exploration",
-            "exploration": "exploration",
-            "exceed_limit_try": "exceed_limit_try",
-            "exceed_explore_try": "exceed_explore_try",
-        },
-    )
-    graph.add_edge("add_to_exploration_direction_pool", "route_exploration_stage")
-    graph.add_edge("revise_exploration_direction", "route_exploration_stage")
-    graph.add_conditional_edges(
-        "check_exploration_switch",
-        lambda workflow_state: workflow_state.get(
-            "exploration_switch_result", "no_switch"
-        ),
-        {
-            "feedback_received": "preempt_explorer",
-            "create_explorer": "create_workgroup",
-            "wake_explorer": "wake_explorer",
-            "release_explorer_slot": "release_explorer_slot",
-            "retire_workgroup": "retire_workgroup",
-            "continue_submission": "is_tool_submission",
-            "no_switch": "exploration",
-        },
-    )
-    graph.add_edge("preempt_explorer", "wait_for_explorer_attempt_end")
-    graph.add_edge("wait_for_explorer_attempt_end", "route_exploration_stage")
-    graph.add_edge("update_exploration_direction", "update_exploration_direction_pool")
-    graph.add_edge("update_exploration_direction_pool", "route_exploration_stage")
-    graph.add_edge("add_to_exploration_code_pool", "route_exploration_stage")
-    graph.add_edge("wake_explorer", "route_exploration_stage")
-    graph.add_edge("release_explorer_slot", "route_exploration_stage")
-    graph.add_edge("retire_workgroup", "release_explorer_slot")
-    graph.add_edge("queue_verification_request", END)
-    graph.add_edge("exceed_limit_try", "retire_workgroup")
-    graph.add_edge("exceed_explore_try", "retire_workgroup")
-    return graph
+    return StateGraph(dict)

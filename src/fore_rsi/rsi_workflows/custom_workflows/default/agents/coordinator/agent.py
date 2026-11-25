@@ -14,7 +14,7 @@ from fore_rsi.rsi_workflows.base_agent import BaseAgent
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator.tools import (
     submit_task,
 )
-from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general_subflow import (
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
     enqueue_task_submission,
 )
 from fore_rsi.rsi_workflows.workgroup import Workgroup

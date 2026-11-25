@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Verifier role for the default collaboration workflow."""
+"""Compatibility import for the former VerifierAgent path."""
 
-from fore_rsi.rsi_workflows.base_agent import BaseAgent
+from ..experimenter.agent import ExperimenterAgent
 
+VerifierAgent = ExperimenterAgent
 
-class VerifierAgent(BaseAgent):
-    """Gather feedback and evidence about the team's work against task objectives."""
-
-    role_name = "Verifier"
+__all__ = ["VerifierAgent"]

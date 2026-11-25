@@ -129,7 +129,7 @@ In the conversation, tell the Coordinator your objective, constraints, available
 
 > Optimize BF16 Qwen3.5-35B-A3B on SGLang at request concurrency 1 and 16. Increase output token throughput and reduce time per output token (TPOT) while preserving answer quality. Use at most two NVIDIA A100 GPUs on one host, with a 24-hour budget.
 >
-> Team concurrency: 4 Explorers, 4 Workers, 2 Verifiers.
+> Team concurrency: 4 Explorers, 4 Workers, 2 Experimenters.
 
 If you already have a task file, provide it when starting. For example, run the [SGLang throughput task](tasks/inference-optimization/sglang-throughput.md) from the ForeRSI repository root:
 
@@ -177,14 +177,14 @@ fore-rsi delete --session sglang-throughput
 ## The improvement loop
 
 <p align="center">
-  <img src="docs/assets/improvement-loop.png" alt="Agent Teams explore, execute, and verify in a feedback loop; the Watchdog oversees the entire task loop and reminds team members; humans and agents improve both the task loop and the Watchdog." width="720">
+  <img src="docs/assets/improvement-loop.png" alt="Agent Teams explore, execute, and experiment in a feedback loop; the Watchdog oversees the entire task loop and reminds team members; humans and agents improve both the task loop and the Watchdog." width="720">
 </p>
 
 ### Task iteration
 
 1. Explore approaches: examine the available materials and possible paths against the objectives and constraints, then develop an actionable plan.
-2. Execute the plan: carry out the work and produce code, configuration, analyses, documents, or other outputs ready for verification.
-3. Verify results: gather feedback through tests, measurements, simulations, or human review, assess the outcome against the objectives and constraints, and decide what to retain or revise.
+2. Execute the plan: carry out the work and produce code, configuration, analyses, documents, or other outputs ready for experiments.
+3. Run experiments: gather feedback through tests, measurements, simulations, or human review, assess the outcome against the objectives and constraints, and decide what to retain or revise.
 
 Feedback guides the next round of exploration and execution. The team can also request feedback during exploration.
 

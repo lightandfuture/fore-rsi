@@ -80,17 +80,17 @@ class DefaultWorkflow(BaseWorkflow):
         publish_task-->update_agent_scheduler
               +--[initialize]--> initialize_first_task
               |                         +--> run_exploration_area (4)
-              |                         +--> run_verification_area (2)
+              |                         +--> run_experiment_area (2)
                                         +--> run_watchdog_area (1)
               +--[update_task]--> send_message_to_agents --> wait_for_task_submission
 
         run_exploration_area --> route_workflow_stage
-        run_verification_area --> route_workflow_stage
+        run_experiment_area --> route_workflow_stage
         run_watchdog_area --> route_workflow_stage
 
         route_workflow_stage
               +--[exploration] -> run_exploration_area
-              +--[verification] -> run_verification_area
+              +--[experiment] -> run_experiment_area
               +--[watchdog] -> run_watchdog_area
               +--[wait_for_task_submission]
               +--[finish]       -> END

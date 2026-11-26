@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Shared nodes for task intake and branch exits."""
+"""Shared nodes for task intake, task updates, and branch exits."""
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from loguru import logger
 
-from fore_rsi.rsi_workflows.workflow_runtimes.task import TaskSubmission
+from fore_rsi.rsi_workflows.base_agent import AgentState
+from fore_rsi.rsi_workflows.workflow_runtimes.task import TaskRevision, TaskSubmission
 
 if TYPE_CHECKING:
     from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
@@ -31,6 +32,22 @@ async def enqueue_task_submission(
 ) -> None:
     """Publish one Coordinator task submission to the Workflow-owned queue."""
     await workflow.task_submission_queue.put(task_submission)
+
+
+async def update_task_to_agents(workflow: "BaseWorkflow", workflow_state: Mapping[str, object]) -> None:
+    """Queue a new task revision's path for all current members, including sleeping ones."""
+    if not workflow_state["is_new_task_revision"]:
+        return
+
+    revision = cast(TaskRevision, workflow_state["task_revision"])
+    message = (
+        f"Task revision {revision.revision_number} is available. "
+        f"Read {revision.revision_file_path.resolve()} for the updated requirements."
+    )
+    members = [agent for group in workflow.workgroups.values() for agent in group.agents.values()]
+    for agent in members:
+        if agent.state not in (AgentState.RETIRED, AgentState.FAILED):
+            await agent.send_message(message)
 
 
 def exit_node(workflow: "BaseWorkflow", workflow_state: Mapping[str, object], *, graph_name: str) -> None:

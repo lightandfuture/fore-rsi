@@ -14,12 +14,22 @@ from fore_rsi.rsi_workflows.base_workflow import BaseWorkflow
 from fore_rsi.rsi_workflows.custom_workflows.default.agents.coordinator import (
     CoordinatorAgent,
 )
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.experiment_subflow import (
+    build_experiment_subflow,
+)
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.exploration_subflow import (
+    build_exploration_subflow,
+)
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.general import (
     exit_node,
+    update_task_to_agents,
     wait_for_task_submission,
 )
 from fore_rsi.rsi_workflows.custom_workflows.default.subflows.wait_for_settle_and_tool_subflow import (
     build_wait_for_settle_and_tool_subflow,
+)
+from fore_rsi.rsi_workflows.custom_workflows.default.subflows.watchdog_subflow import (
+    build_watchdog_subflow,
 )
 from fore_rsi.rsi_workflows.workflow_runtimes.task import Task, TaskSubmission
 
@@ -67,6 +77,12 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_node("wait_for_task_submission", partial(wait_for_task_submission, self))
         graph.add_node("publish_task", self.task.publish_task)
         graph.add_node("update_agent_scheduler", self.agent_scheduler.update_agent_scheduler)
+        graph.add_node("update_task_to_agents", partial(update_task_to_agents, self))
+
+        # On entry, LangGraph invokes the returned subgraph with the incoming state.
+        graph.add_node("run_exploration_area", lambda _: build_exploration_subflow(self).compile())
+        graph.add_node("run_experiment_area", lambda _: build_experiment_subflow(self).compile())
+        graph.add_node("run_watchdog_area", lambda _: build_watchdog_subflow(self).compile())
         graph.add_node("exit_node", partial(exit_node, self, graph_name=self.workflow_name))
 
     def build_workflow_edges(self, graph: StateGraph) -> None:
@@ -79,12 +95,11 @@ class DefaultWorkflow(BaseWorkflow):
                                               --> publish_task
                                               --> wait_for_task_submission
 
-        publish_task-->update_agent_scheduler
-              +--[initialize]--> initialize_first_task
-              |                         +--> run_exploration_area
-              |                         +--> run_experiment_area
-                                        +--> run_watchdog_area
-              +--[update_task]--> send_message_to_agents --> wait_for_task_submission
+        publish_task --> update_agent_scheduler
+                           +--[initialize]--+--> run_exploration_area
+                           |                +--> run_experiment_area
+                           |                +--> run_watchdog_area
+                           +--[update_task]----> update_task_to_agents --> wait_for_task_submission
 
         run_exploration_area: update_code_pool           --[Command.PARENT]--> route_workflow_stage[experiment]
         run_experiment_area:  queue_exploration_feedback --[Command.PARENT]--> route_workflow_stage[exploration]
@@ -116,4 +131,19 @@ class DefaultWorkflow(BaseWorkflow):
             },
         )
         graph.add_edge("wait_for_task_submission", "publish_task")
+        graph.add_edge("publish_task", "update_agent_scheduler")
+
+        # On first publication, start all three areas in parallel.
+        graph.add_conditional_edges(
+            "update_agent_scheduler",
+            lambda state: ["exploration", "experiment", "watchdog"]
+            if state["is_first_task_submission"] else "update_task",
+            path_map={
+                "exploration": "run_exploration_area",
+                "experiment": "run_experiment_area",
+                "watchdog": "run_watchdog_area",
+                "update_task": "update_task_to_agents",
+            },
+        )
+        graph.add_edge("update_task_to_agents", "wait_for_task_submission")
         graph.add_edge("exit_node", END)

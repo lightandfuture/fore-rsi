@@ -94,6 +94,7 @@ class Task:
         return {
             **workflow_state,
             "task_revision": task_revision,
+            "is_new_task_revision": task_revision is not current_task,
             "previous_task_revisions": self.task_revisions[:-1],
             "is_first_task_submission": task_revision.revision_number == 1,
         }

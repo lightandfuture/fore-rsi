@@ -5,7 +5,7 @@
 
 from typing import TYPE_CHECKING
 
-from langgraph.graph import StateGraph
+from langgraph.graph import END, START, StateGraph
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def build_experiment_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     """Build the Experiment subflow graph for the default workflow.
 
-    START --> route_experiment_stage
+    START
                 +--[initialize_experimenter] --> create_experimenter_workgroup
                 |                                --> study_experiment
                 |                                --> fork_experimenter [seed = study_experiment, quota = 2]
@@ -26,9 +26,20 @@ def build_experiment_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                 +--[experiment] ------------> select_experimenter (blocking with quota) --> experiment (running)
                                              --> wait_for_settle_and_tool_subflow[A=publish_result,B=experiment,C=exit_node]
 
+
     unlock_select_resources --> END
     abort_resource_selection (release the selection lock without an assignment) --> exit_node
     exit_node --> END
     publish_result --> queue_exploration_feedback --[Command.PARENT]--> route_workflow_stage[exploration]
     """
-    return StateGraph(dict)
+    graph = StateGraph(dict)
+    graph.add_conditional_edges(
+        START,
+        lambda state: state.get("next_experiment_stage"),
+        {
+            "initialize_experimenter": "create_experimenter_workgroup",
+            "select_resources": "lock_select_resources",
+            "experiment": "select_experimenter",
+        },
+    )
+    return graph

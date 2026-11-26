@@ -3,8 +3,9 @@
 
 """Execution interface and discovery metadata shared by ForeRSI workflows."""
 
+import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -40,7 +41,7 @@ class BaseWorkflow(ABC):
         self.agent_name_counters: dict[str, int] = {}
         self.workgroup_sequence = 0
         self.workgroups: dict[str, Workgroup] = {}
-        self.global_workgroup = self.create_workgroup(WorkflowConfig.GLOBAL_WORKGROUP_NAME)
+        self.global_workgroup = self.create_empty_workgroup(WorkflowConfig.GLOBAL_WORKGROUP_NAME)
 
     async def run(self, workspace_id: str) -> None:
         """Prepare, compile, invoke, and clean up one Workflow execution."""
@@ -84,7 +85,7 @@ class BaseWorkflow(ABC):
             for agent_name in tuple(workgroup.agents):
                 await self.close_agent(workgroup_name, agent_name)
 
-    def create_workgroup(self, workgroup_name: str | None = None) -> Workgroup:
+    def create_empty_workgroup(self, workgroup_name: str | None = None) -> Workgroup:
         """Create an empty Workgroup with an explicit or workflow-assigned name."""
         if workgroup_name is None:
             self.workgroup_sequence += 1
@@ -96,6 +97,34 @@ class BaseWorkflow(ABC):
         workgroup = Workgroup(workgroup_name)
         self.workgroups[workgroup_name] = workgroup
         return workgroup
+
+    async def create_workgroup(
+        self,
+        workflow_state: Mapping[str, object],
+        *,
+        agents: Sequence[tuple[type[BaseAgent], AgentConfig]],
+    ) -> dict[str, object]:
+        """Start members concurrently; the workflow lifecycle owns cleanup.
+
+        Agent classes and configurations are bound when building the graph.
+        TaskGroup cancels and joins sibling requests if creation fails.
+        """
+        workspace_id = workflow_state["workspace_id"]
+        workgroup = self.create_empty_workgroup()
+        async with asyncio.TaskGroup() as tasks:
+            for agent_class, config in agents:
+                tasks.create_task(self.request_agent_creation(
+                    {"workspace_id": workspace_id},
+                    agent_class=agent_class,
+                    agent_config=config,
+                    agent_name=self.next_agent_name(agent_class.role_name),
+                    workgroup_name=workgroup.workgroup_name,
+                ))
+        return {
+            **workflow_state,
+            "workgroup": workgroup,
+            "workgroup_name": workgroup.workgroup_name,
+        }
 
     async def request_agent_creation(
         self,

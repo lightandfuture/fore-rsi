@@ -3,9 +3,13 @@
 
 """Explorer research, implementation, feedback, and Workgroup lifecycle subflow."""
 
+from functools import partial
 from typing import TYPE_CHECKING
 
 from langgraph.graph import StateGraph
+
+from ..agents.checker import CheckerAgent
+from ..agents.explorer import ExplorerAgent
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
@@ -51,4 +55,15 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
 
     retire --> retire_workgroup --> END[finish]
     """
-    return StateGraph(dict)
+    graph = StateGraph(dict)
+    graph.add_node(
+        "create_workgroup",
+        partial(
+            workflow.create_workgroup,
+            agents=[
+                (ExplorerAgent, workflow.default_agent_config),
+                (CheckerAgent, workflow.default_agent_config),
+            ],
+        ),
+    )
+    return graph

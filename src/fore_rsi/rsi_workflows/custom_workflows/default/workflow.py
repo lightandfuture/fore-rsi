@@ -131,6 +131,7 @@ class DefaultWorkflow(BaseWorkflow):
             },
         )
         graph.add_edge("wait_for_task_submission", "publish_task")
+        graph.add_edge("publish_task", "wait_for_task_submission")
         graph.add_edge("publish_task", "update_agent_scheduler")
 
         # On first publication, start all three areas in parallel.

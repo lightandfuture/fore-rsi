@@ -5,6 +5,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from functools import wraps
 from typing import TYPE_CHECKING, ClassVar, Literal
@@ -79,6 +80,7 @@ class BaseAgent:
         self.workgroup = workgroup
         self.system_prompt: str | None = None
         self.state = AgentState.READY
+        self.inbox: list[tuple[datetime, str]] = []
         self.step_tool_calls: StepToolCalls | None = None
         self.agent_runtime = create_agent_runtime(
             agent_config, workflow_directory=workflow.session_directory,
@@ -87,6 +89,10 @@ class BaseAgent:
             tools=[self.observe_tool_submission(tool) for tool in tools],
         )
 
+    def add_to_inbox(self, message: str) -> None:
+        """Timestamp an incoming message for the next prompt without starting a turn."""
+        self.inbox.append((datetime.now(UTC), message))
+
     async def send_message(
         self,
         message: str,
@@ -94,7 +100,7 @@ class BaseAgent:
         *,
         expected_tool_calls: ExpectedToolCalls | None = None,
     ) -> None:
-        """Bind the step's expected tool calls before dispatching its prompt."""
+        """Dispatch the prompt with pending inbox messages and bind its expected tool calls."""
         previous = self.step_tool_calls
         if expected_tool_calls is not None:
             attempt_number = 1
@@ -108,7 +114,21 @@ class BaseAgent:
         elif mode == "queue" and previous is not None and previous.outcome is not None:
             # Discard a finished step's result without disarming a still-running turn.
             self.step_tool_calls = None
-        await self.agent_runtime.send_message(message, mode=mode)
+        # Claim this batch before yielding so later mail stays in the inbox.
+        pending = self.inbox.copy()
+        self.inbox.clear()
+        try:
+            if pending:
+                entries = [
+                    f"[Received at {received_at.astimezone().isoformat(sep=' ', timespec='seconds')}]\n{text}"
+                    for received_at, text in pending
+                ]
+                now = datetime.now(UTC).astimezone().isoformat(sep=" ", timespec="seconds")
+                message = "\n\n".join([*entries, f"[Current time: {now}]\n{message}"])
+            await self.agent_runtime.send_message(message, mode=mode)
+        except BaseException:
+            self.inbox[:0] = pending
+            raise
 
     def observe_tool_submission(self, tool: AgentTool) -> AgentTool:
         """Leave the payload with its owner and record successful expected calls for this member."""

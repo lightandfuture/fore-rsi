@@ -1,32 +1,35 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the ForeRSI project
 
-"""Run one workflow member in the Claude Code terminal lifecycle."""
+"""Control the foreground conversation in a member's Claude Code terminal."""
 
 import asyncio
 import json
 import os
-from collections.abc import Sequence
-from contextlib import suppress
+import sys
+from collections import deque
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
+
+from starlette.requests import Request
+from starlette.responses import Response, StreamingResponse
 
 from fore_rsi.config import AgentConfig, ReasoningEffort
 from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import AgentRuntime, MessageDeliveryMode
 from fore_rsi.rsi_workflows.agent_runtimes.claude_code.record_file import (
+    bind_session_transcript,
     get_claude_project_link,
-    link_project_directory,
-    prepare_claude_profile,
     prepare_claude_session,
     remove_project_link,
 )
 from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
-from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
+from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost, create_tool_mcp
 from fore_rsi.utils.paths import write_private_text
-from fore_rsi.utils.terminal import run_terminal
+from fore_rsi.utils.terminal import PaneLocation
 
 
 class ClaudeCodeAgentRuntime(AgentRuntime):
-    """Run Claude Code with a persistent member conversation and project alias."""
+    """Deliver workflow input to one visible Claude session without editing its prompt box."""
 
     harness_name = "claude"
 
@@ -40,7 +43,7 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         tool_mcp_host: ToolMcpHost,
         tools: Sequence[AgentTool] = (),
     ) -> None:
-        """Create a Claude Code runtime with serialized prompt delivery."""
+        """Bind the member's input stream and native turn notifications to its private route."""
         super().__init__(
             agent_config,
             workflow_directory,
@@ -49,64 +52,138 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
             tool_mcp_host=tool_mcp_host,
             tools=tools,
         )
-        self.claude_project_name: str | None = None
+        if self.tool_mcp is None:
+            self.tool_mcp = create_tool_mcp(())
+        self.tool_mcp.custom_route("/inputs", methods=["GET"])(self.open_inputs)
+        self.tool_mcp.custom_route("/turn", methods=["POST"])(self.on_turn_event)
+        self.profile_environment: dict[str, str] = {}
         self.conversation_id: str | None = None
-        self.initial_prompt_pending = False
-        self.message_tail: asyncio.Task[None] | None = None
+        self.changed = asyncio.Condition()
+        self.connected = False
+        self.queue: deque[str] = deque()
+        self.steers: deque[str] = deque()
+        self.awaiting_start = False
+        self.active_turn: str | None = None
+        self.workflow_turn: str | None = None
+        self.failure: str | None = None
 
-    async def send_message(
-        self,
-        message: str,
-        mode: MessageDeliveryMode = "queue",
-    ) -> None:
-        """Submit a queue or steer prompt through Claude Code's documented controls."""
-        if mode not in {"queue", "steer"}:
-            raise ValueError(f"Unsupported Claude Code message delivery mode: {mode!r}")
-        if self.terminal_id is None:
-            raise RuntimeError("Start the Claude Code member before sending a message.")
+    async def wait_for_agent_ready(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
+        """Require both the visible TUI and its input channel before publishing readiness."""
+        agent = await super().wait_for_agent_ready(pane, agent)
+        try:
+            async with asyncio.timeout(30), self.changed:
+                await self.changed.wait_for(lambda: self.connected or self.failure is not None)
+        except TimeoutError as error:
+            raise RuntimeError(
+                "Claude Code did not connect its ForeRSI turn plugin. Check the member terminal."
+            ) from error
+        if not self.connected:
+            raise RuntimeError(self.failure)
+        return agent
 
-        async with self.message_lock:
-            previous_message = self.message_tail
+    async def send_message(self, message: str, mode: MessageDeliveryMode = "queue") -> None:
+        """Accept one input without waiting for its turn. Steers precede ordinary queued work."""
+        if mode not in {"queue", "steer"} or not message.strip():
+            raise ValueError("Claude Code requires a nonempty queue or steer message.")
+        async with self.changed:
+            if not self.connected or self.terminal_id is None:
+                raise RuntimeError("Claude Code's input channel is not connected.")
+            (self.steers if mode == "steer" else self.queue).append(message)
+            self.changed.notify_all()
 
-            async def deliver() -> None:
-                if previous_message is not None:
-                    await previous_message
-                if mode == "steer":
-                    if self.initial_prompt_pending:
-                        await self.submit_initial_prompt(message)
-                        self.initial_prompt_pending = False
-                    else:
-                        await self.submit_steer_prompt(message)
-                elif self.initial_prompt_pending:
-                    await self.submit_initial_prompt(message)
-                    self.initial_prompt_pending = False
-                else:
-                    await self.run_resumed_prompt(message)
+    async def open_inputs(self, request: Request) -> Response:
+        """Stream input to this member's mod; ordinary prompts stay queued until the foreground is idle."""
+        if self.connected:
+            return Response(status_code=409)
+        self.connected = True
 
-            message_task = asyncio.create_task(deliver())
-            self.message_tail = message_task
-            message_task.add_done_callback(self.consume_message_error)
+        async def inputs() -> AsyncIterator[bytes]:
+            try:
+                async with self.changed:
+                    self.changed.notify_all()
+                while self.connected:
+                    async with self.changed:
+                        await self.changed.wait_for(
+                            lambda: (
+                                not self.connected
+                                or (
+                                    not self.awaiting_start
+                                    and (self.steers or (self.active_turn is None and self.queue))
+                                )
+                            )
+                        )
+                        if not self.connected:
+                            return
+                        mode, messages = ("steer", self.steers) if self.steers else ("queue", self.queue)
+                        self.awaiting_start = True
+                        line = json.dumps({"mode": mode, "text": messages.popleft()}) + "\n"
+                    yield line.encode()
+            finally:
+                await self.disconnect()
+
+        return StreamingResponse(inputs(), media_type="application/x-ndjson")
+
+    async def on_turn_event(self, request: Request) -> Response:
+        """Associate the dispatched prompt with its native turn; a manual turn owns only the foreground."""
+        event = await request.json()
+        if event["session_id"] != self.conversation_id:
+            return Response(status_code=409)
+        async with self.changed:
+            kind = event.get("event")
+            if kind == "session":
+                bind_session_transcript(self.get_agent_file_path(""), Path(event["transcript"]))
+            elif kind == "start":
+                self.active_turn = event["turnId"]
+                if event["workflow"]:
+                    self.workflow_turn = self.active_turn
+                    self.awaiting_start = False
+            elif kind == "complete":
+                turn = event["turnId"]
+                if self.active_turn == turn:
+                    self.active_turn = None
+                if self.workflow_turn == turn:
+                    self.workflow_turn = None
+                    if event["reason"] not in {"answer", "steered"}:
+                        self.failure = f"Claude Code turn ended: {event['reason']}"
+            elif kind == "failed":
+                self.failure = event["error"]
+                self.awaiting_start = False
+            elif event.get("hook_event_name") == "PermissionRequest" and not event.get("agent_id"):
+                self.failure = "Claude Code is waiting for permission in the member terminal."
+            self.changed.notify_all()
+        return Response(status_code=200)
 
     async def wait_for_settle(self) -> None:
-        """Wait for the submitted Claude Code prompt to settle."""
-        message_task = self.message_tail
-        if message_task is None:
-            raise RuntimeError("Submit a Claude Code message before waiting for settle.")
-        try:
-            await message_task
-        finally:
-            if self.message_tail is message_task:
-                self.message_tail = None
+        """Wait for all accepted inputs, including steers arriving during an earlier turn."""
+        async with self.changed:
+            await self.changed.wait_for(
+                lambda: (
+                    self.failure is not None
+                    or not self.connected
+                    or (not self.steers and not self.queue and not self.awaiting_start and self.workflow_turn is None)
+                )
+            )
+            if self.failure is not None:
+                failure, self.failure = self.failure, None
+                raise RuntimeError(failure)
+            if not self.connected:
+                raise RuntimeError("Claude Code's input channel closed.")
+
+    async def disconnect(self) -> None:
+        """Release waiters and discard undelivered inputs when their owning session disconnects."""
+        async with self.changed:
+            self.connected = False
+            self.queue.clear()
+            self.steers.clear()
+            self.awaiting_start = False
+            self.active_turn = self.workflow_turn = None
+            self.changed.notify_all()
 
     async def close(self) -> None:
-        """Stop pending prompt delivery, release the pane, and preserve the conversation."""
-        message_task = self.message_tail
-        self.message_tail = None
-        if message_task is not None and not message_task.done():
-            message_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await message_task
+        """Close the input stream before stopping the member; keep its native conversation."""
+        await self.disconnect()
         await super().close()
+        self.failure = None
 
     @classmethod
     async def ensure_installed(cls) -> Path:
@@ -125,18 +202,21 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
         *,
         system_prompt: str | None = None,
     ) -> list[str]:
-        """Prepare Claude Code's persistent conversation, prompt, model, tools, and permissions."""
-        self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        profile = self.profile_directory()
-        prepare_claude_profile(profile)
-        project_name, session_flag, conversation = prepare_claude_session(
+        """Bind the session, its turn plugin and role tools without replacing the user's Claude profile."""
+        profile = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser().resolve()
+        self.profile_environment, flag, self.conversation_id = prepare_claude_session(
             self.get_agent_file_path(""), profile
         )
-        self.claude_project_name = project_name
-        self.conversation_id = conversation
-        self.initial_prompt_pending = session_flag == "--session-id"
-
-        options: list[str] = ["--dangerously-skip-permissions"]
+        url = self.tool_mcp_host.tool_endpoints[self.tool_mcp].url.rsplit("/", 1)[0] + "/turn"
+        hooks = {"PermissionRequest": [{"hooks": [{"type": "http", "url": url}]}]}
+        options = [
+            flag,
+            self.conversation_id,
+            "--plugin-dir",
+            str(Path(__file__).with_name("turn_events")),
+            "--settings",
+            json.dumps({"hooks": hooks}),
+        ]
         if self.agent_config.model is not None:
             options.extend(["--model", self.agent_config.model])
         if self.agent_config.effort is not None:
@@ -145,199 +225,39 @@ class ClaudeCodeAgentRuntime(AgentRuntime):
             instructions = self.get_agent_file_path(".instructions.md")
             write_private_text(instructions, system_prompt)
             options.extend(["--append-system-prompt-file", str(instructions)])
-        return super().build_launch_command(
-            executable,
-            [session_flag, conversation, *options, *arguments],
-            system_prompt=system_prompt,
-        )
+        return super().build_launch_command(executable, [*options, *arguments], system_prompt=system_prompt)
 
     def launch_environment(self) -> dict[str, str]:
-        """Keep Claude Code's project alias with the pane so restore finds its history."""
-        if self.claude_project_name is None:
-            raise RuntimeError("Claude Code launch arguments were not prepared before pane creation.")
-        return {
-            "CLAUDE_CODE_PROJECT_DIR_NAME": self.claude_project_name,
-            "CLAUDE_CONFIG_DIR": str(self.profile_directory()),
+        """Pass the stable discovery file to this pane, including when the session is resumed."""
+        env = {
+            "FORE_RSI_MCP_ADDRESS_FILE": str(self.get_agent_file_path(".mcp-url")),
+            "FORE_RSI_PYTHON": sys.executable,
         }
-
-    def profile_directory(self) -> Path:
-        """Keep Claude records and session state under this workflow's harness directory."""
-        return self.harness_directory / "profile"
+        if "CLAUDE_CONFIG_DIR" in os.environ:
+            env["CLAUDE_CONFIG_DIR"] = os.environ["CLAUDE_CONFIG_DIR"]
+        return env | self.profile_environment
 
     def effort_args(self, effort: ReasoningEffort) -> list[str]:
         """Set the reasoning level for this Claude Code invocation."""
         return ["--effort", effort]
 
     def tool_mcp_args(self) -> list[str]:
-        """Add this member's tool client without replacing other configured MCP servers."""
+        """Add the role's tool client without replacing other configured MCP servers."""
+        if not self.tools:
+            return []
         config = {"mcpServers": {"fore_rsi": self.tool_stdio_server()}}
         return [f"--mcp-config={json.dumps(config, ensure_ascii=False)}"]
 
-    async def submit_initial_prompt(self, message: str) -> None:
-        """Submit the first prompt through the ready Claude Code TUI and wait for its turn."""
-        if self.terminal_id is None:
-            raise RuntimeError("Start the Claude Code member before sending a message.")
-        await run_terminal(
-            [
-                "agent",
-                "prompt",
-                self.terminal_id,
-                message,
-                "--wait",
-                "--until",
-                "idle",
-                "--until",
-                "done",
-            ],
-            self.terminal_session_name,
-            capture_output=True,
-        )
-
-    async def submit_steer_prompt(self, message: str) -> None:
-        """Steer a working turn or submit immediately when Claude is already idle."""
-        if self.terminal_id is None:
-            raise RuntimeError("Start the Claude Code member before steering it.")
-        agent = await self.get_agent()
-        if agent is None:
-            raise RuntimeError("The Claude Code member is no longer running.")
-        status = agent.get("agent_status")
-        if status == "blocked":
-            raise RuntimeError("Claude Code is blocked before the steering prompt.")
-        if status in {"idle", "done"}:
-            result = await run_terminal(
-                [
-                    "agent",
-                    "prompt",
-                    self.terminal_id,
-                    message,
-                    "--wait",
-                    "--until",
-                    "idle",
-                    "--until",
-                    "done",
-                    "--until",
-                    "blocked",
-                ],
-                self.terminal_session_name,
-                capture_output=True,
-            )
-            agent = json.loads(result.stdout)["result"]["agent"]
-            if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Claude Code is blocked after the steering prompt.")
-            return
-
-        if status != "working":
-            raise RuntimeError(f"Claude Code cannot steer from state {status!r}.")
-        await run_terminal(
-            ["agent", "prompt", self.terminal_id, message],
-            self.terminal_session_name,
-            capture_output=True,
-        )
-        await run_terminal(
-            ["agent", "send-keys", self.terminal_id, "ctrl+x", "ctrl+s"],
-            self.terminal_session_name,
-            capture_output=True,
-        )
-        result = await run_terminal(
-            [
-                "agent",
-                "wait",
-                self.terminal_id,
-                "--until",
-                "idle",
-                "--until",
-                "done",
-                "--until",
-                "blocked",
-            ],
-            self.terminal_session_name,
-            capture_output=True,
-        )
-        agent = json.loads(result.stdout)["result"]["agent"]
-        if agent.get("agent_status") == "blocked":
-            raise RuntimeError("Claude Code is blocked after the steering prompt.")
-
-    async def run_resumed_prompt(self, message: str) -> None:
-        """Run one documented headless turn against the member's existing conversation."""
-        if self.conversation_id is None or self.claude_project_name is None:
-            raise RuntimeError("Prepare the Claude Code conversation before sending a message.")
-        executable = await self.ensure_installed()
-        command = [
-            str(executable),
-            "-p",
-            "--resume",
-            self.conversation_id,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--dangerously-skip-permissions",
-        ]
-        if self.agent_config.model is not None:
-            command.extend(["--model", self.agent_config.model])
-        if self.agent_config.effort is not None:
-            command.extend(self.effort_args(self.agent_config.effort))
-        instructions = self.get_agent_file_path(".instructions.md")
-        if instructions.is_file():
-            command.extend(["--append-system-prompt-file", str(instructions)])
-        command.extend([*self.tool_mcp_args(), message])
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=Path.cwd(),
-            env={
-                **os.environ,
-                "CLAUDE_CONFIG_DIR": str(self.profile_directory()),
-                "CLAUDE_CODE_PROJECT_DIR_NAME": self.claude_project_name,
-            },
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stderr_task = asyncio.create_task(process.stderr.read()) if process.stderr is not None else None
-        result: dict[str, object] | None = None
-        try:
-            if process.stdout is None:
-                raise RuntimeError("Claude Code did not expose stream output.")
-            while line := await process.stdout.readline():
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if event.get("type") == "result":
-                    result = event
-            returncode = await process.wait()
-            stderr = await stderr_task if stderr_task is not None else b""
-        except BaseException:
-            if process.returncode is None:
-                process.kill()
-            await process.communicate()
-            if stderr_task is not None:
-                stderr_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await stderr_task
-            raise
-
-        details = stderr.decode("utf-8", errors="replace").strip()
-        if returncode != 0:
-            raise RuntimeError(f"Claude Code command failed: {details or returncode}")
-        if result is None:
-            raise RuntimeError("Claude Code ended without a stream result.")
-        if result.get("is_error") or result.get("subtype") not in {None, "success"}:
-            raise RuntimeError(str(result.get("result") or result.get("subtype") or "Claude Code turn failed."))
-
-    def consume_message_error(self, message_task: asyncio.Task[None]) -> None:
-        """Retrieve an asynchronous prompt error until the workflow awaits the task."""
-        if not message_task.cancelled():
-            message_task.exception()
-
     @classmethod
     def remove_workflow_storage(cls, workflow_directory: Path) -> None:
-        """Remove Claude project links whose targets belong to this workflow."""
+        """Remove only Claude project links still pointing to this workflow."""
         claude_directory = workflow_directory / "harnesses" / "claude"
         for record in claude_directory.glob("member-*.session"):
             binding = json.loads(record.read_bytes())
             conversation = str(binding["id"])
-            profile = Path(binding.get("profile") or binding["home"])
             project_directory = claude_directory / "projects" / "agents" / record.stem
-            remove_project_link(
-                get_claude_project_link(profile, conversation), project_directory
-            )
+            if "native_profile" not in binding:
+                profile = Path(binding.get("profile") or binding["home"])
+                remove_project_link(get_claude_project_link(profile, conversation), project_directory)
+            if "transcript_link" in binding:
+                remove_project_link(Path(binding["transcript_link"]), project_directory / f"{conversation}.jsonl")

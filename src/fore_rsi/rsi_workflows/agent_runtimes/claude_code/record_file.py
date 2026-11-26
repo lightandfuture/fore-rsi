@@ -4,7 +4,6 @@
 """Manage Claude Code conversation records and project links."""
 
 import json
-import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -33,51 +32,45 @@ def remove_project_link(link: Path, target: Path) -> None:
         link.unlink()
 
 
-def prepare_claude_profile(profile: Path) -> None:
-    """Reuse user settings and credentials without placing Claude records outside the workflow."""
-    origin = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser().resolve()
-    origin.mkdir(mode=0o700, parents=True, exist_ok=True)
-    profile.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if profile.resolve() == origin:
-        return
-
-    for name in (
-        ".credentials.json",
-        "settings.json",
-        "settings.local.json",
-        "CLAUDE.md",
-        "commands",
-        "hooks",
-        "plugins",
-        "skills",
-    ):
-        source, link = origin / name, profile / name
-        if link.is_symlink():
-            if link.resolve() != source.resolve():
-                raise ValueError(f"Claude profile link is already bound to another source: {link}")
-        elif not link.exists() and source.exists():
-            link.symlink_to(source, target_is_directory=source.is_dir())
-
-
-def prepare_claude_session(member: Path, profile: Path) -> tuple[str, str, str]:
-    """Bind one persistent conversation UUID to its Claude project alias."""
+def bind_session_transcript(member: Path, native: Path) -> None:
+    """Link the native per-session filename to the member record when using Claude's default profile."""
     record = member.with_suffix(".session")
-    project_directory = member.parent / "projects" / "agents" / member.name
+    binding = json.loads(record.read_bytes())
+    conversation = str(UUID(binding["id"]))
+    profile = binding.get("native_profile") or binding.get("profile") or binding["home"]
+    projects = Path(profile) / "projects"
+    directory = member.parent / "projects" / "agents" / member.name
+    owned = directory / f"{conversation}.jsonl"
+    if native.resolve() == owned.resolve():
+        return
+    if native.name != owned.name or not native.is_absolute() or native.parent.resolve().parent != projects.resolve():
+        raise ValueError(f"Unexpected Claude transcript location for session {conversation}.")
+    native.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Install the link before Claude's first write. Never replace an existing
+    # native record, even if another session happens to claim the same name.
+    native.symlink_to(owned)
+    binding["transcript_link"] = str(native)
+    write_private_text(record, json.dumps(binding))
+
+
+def prepare_claude_session(member: Path, profile: Path) -> tuple[dict[str, str], str, str]:
+    """Preserve the member UUID and reuse the profile where its conversation was created."""
+    record = member.with_suffix(".session")
+    directory = member.parent / "projects" / "agents" / member.name
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         binding = json.loads(record.read_bytes())
     except FileNotFoundError:
-        binding = {"id": str(uuid4()), "profile": None}
+        binding = {"id": str(uuid4()), "native_profile": str(profile)}
+        write_private_text(record, json.dumps(binding))
 
     conversation = str(UUID(binding["id"]))
-    previous_profile = binding.get("profile", binding.get("home"))
-    if previous_profile != str(profile):
-        if previous_profile is not None:
-            remove_project_link(
-                get_claude_project_link(Path(previous_profile), conversation), project_directory
-            )
-        write_private_text(record, json.dumps({"id": conversation, "profile": str(profile)}))
-
-    project_link = get_claude_project_link(profile, conversation)
-    link_project_directory(project_link, project_directory)
-    flag = "--resume" if (project_directory / f"{conversation}.jsonl").is_file() else "--session-id"
-    return project_link.name, flag, conversation
+    environment = {}
+    if "native_profile" not in binding:
+        # Existing members keep their project-directory alias and resume settings.
+        previous = Path(binding.get("profile") or binding["home"])
+        alias = get_claude_project_link(previous, conversation)
+        link_project_directory(alias, directory)
+        environment = {"CLAUDE_CONFIG_DIR": str(previous), "CLAUDE_CODE_PROJECT_DIR_NAME": alias.name}
+    flag = "--resume" if (directory / f"{conversation}.jsonl").is_file() else "--session-id"
+    return environment, flag, conversation

@@ -29,6 +29,7 @@ dependencies = [
     "textual>=8.2.8,<9",
     "tyro>=1.0.17,<2",
     "uvicorn>=0.31.1,<1",
+    "websockets>=17,<18",
 ]
 
 [project.scripts]
@@ -45,3 +46,9 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "*" = ["prompts/**/*.j2"]
+"fore_rsi.rsi_workflows.agent_runtimes.claude_code" = [
+    "turn_events/.claude-plugin/plugin.json",
+    "turn_events/hooks/hooks.json",
+    "turn_events/hooks/register.js",
+    "turn_events/hooks/input_stream.py",
+]

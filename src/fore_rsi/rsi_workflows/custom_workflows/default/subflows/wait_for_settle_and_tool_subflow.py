@@ -33,7 +33,7 @@ def build_wait_for_settle_and_tool_subflow(*, max_attempts: int) -> StateGraph:
 async def wait_for_settle(workflow_state: dict[str, object]) -> None:
     """Wait for the active Agent's turn without changing graph state."""
     agent = cast(BaseAgent, workflow_state["agent"])
-    await agent.agent_runtime.wait_for_settle()
+    await agent.wait_for_settle()
 
 
 def is_tool_submission(workflow_state: dict[str, object], *, max_attempts: int) -> dict[str, object]:

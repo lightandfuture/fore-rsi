@@ -24,6 +24,8 @@ This example uses the task file from the ForeRSI repository root. All startup op
 
 Quote values containing spaces. Relative task paths are relative to the working directory. To change a requirement, tell the Coordinator in the same conversation. Each change is saved as a new task revision with its own file; previously submitted task versions stay readable and a resumed session uses the latest one.
 
+With `--harness claude`, workflow messages appear in the member’s existing Claude Code conversation and leave its prompt box free for you to type. If you interrupt a turn with `Esc`, send a message in that terminal before dispatching more work: Claude Code pauses plugin-initiated prompts after a manual stop.
+
 To resume, use the same `--session` name without resubmitting `--task`. Each agent reopens its own native conversation under `<cache-dir>/workflows/<session>/harnesses/`. To switch backends, start a new named session. See [Exit and resume](../README.md#exit-and-resume) for the exit shortcut.
 
 `fore-rsi --help` lists available options; `fore-rsi --version` prints the installed version. Both commands exit after displaying their output.
@@ -114,6 +116,8 @@ fore-rsi --session sglang-throughput \
 - `--cache-dir PATH` 指定新会话的工作流存储目录，默认 `./cache`。相对路径以当前项目的 Git 仓库根目录为基准；不在 Git 仓库中时使用启动目录，绝对路径直接使用。工作流数据保存在其中的 `workflows/` 子目录。当前用户的每个会话名称绑定首次确定的存储位置，之后即使换目录启动，也沿用原位置。
 
 值中有空格时加引号。任务文件的相对路径以工作目录为基准。要调整要求，直接在原对话中告诉协调者即可。发生变化的任务会保存为新的版本文件；之前提交的任务版本仍可查阅，恢复会话时使用最新版本。
+
+使用 `--harness claude` 时，工作流消息直接进入成员当前的 Claude Code 对话，不占用你正在编辑的输入框。如果用 `Esc` 手动中断回合，Claude Code 会暂停接受插件派工；在该终端发一条消息后，即可再次派工。
 
 恢复时使用相同的 `--session` 名称，无需重复提交 `--task`。每个 Agent 都会从 `<cache-dir>/workflows/<session>/harnesses/` 下打开自己的原生对话记录。要换后端，请另起一个会话名。退出快捷键见[退出与恢复](../README_zh.md#退出与恢复)。
 

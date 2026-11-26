@@ -35,7 +35,7 @@ async def enqueue_task_submission(
 
 
 async def update_task_to_agents(workflow: "BaseWorkflow", workflow_state: Mapping[str, object]) -> None:
-    """Queue a new task revision's path for all current members, including sleeping ones."""
+    """Steer working members to the new revision; leave it in other members' inboxes."""
     if not workflow_state["is_new_task_revision"]:
         return
 
@@ -46,8 +46,12 @@ async def update_task_to_agents(workflow: "BaseWorkflow", workflow_state: Mappin
     )
     members = [agent for group in workflow.workgroups.values() for agent in group.agents.values()]
     for agent in members:
-        if agent.state not in (AgentState.RETIRED, AgentState.FAILED):
-            await agent.send_message(message)
+        if agent.state in (AgentState.RETIRED, AgentState.FAILED):
+            continue
+        if agent.state == AgentState.RUNNING:
+            await agent.send_message(message, mode="steer")
+        else:
+            agent.add_to_inbox(message)
 
 
 def exit_node(workflow: "BaseWorkflow", workflow_state: Mapping[str, object], *, graph_name: str) -> None:

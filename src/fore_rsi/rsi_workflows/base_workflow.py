@@ -144,13 +144,13 @@ class BaseWorkflow(ABC):
         return f"{role_prefix}-{agent_index}"
 
     async def close_agent(self, workgroup_name: str, agent_name: str) -> None:
-        """Close a registered Agent and release its active or queued scheduler request."""
+        """Retire the member and release its slot without removing its workgroup entry."""
         workgroup = self.workgroups.get(workgroup_name)
         agent = workgroup.agents.get(agent_name) if workgroup is not None else None
         if agent is None:
             return
+        agent.state = AgentState.RETIRED
         try:
             await agent.agent_runtime.close()
         finally:
-            if await self.agent_scheduler.release(agent):
-                agent.state = AgentState.RETIRED
+            await self.agent_scheduler.release(agent)

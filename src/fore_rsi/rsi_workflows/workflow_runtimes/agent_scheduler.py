@@ -180,7 +180,6 @@ class AgentScheduler:
                 )
                 workgroup.agents[creation_request.agent_name] = agent
                 self.active_agents[agent] = creation_request.quota_key
-                agent.state = AgentState.RUNNING
         except asyncio.CancelledError:
             # A cancelled waiter must leave the queue so it cannot consume a later slot.
             await self.cancel_agent_creation(creation_request)

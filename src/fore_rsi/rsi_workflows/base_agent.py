@@ -24,7 +24,7 @@ class AgentState(StrEnum):
 
     READY = "ready"  # Runnable and eligible for scheduling.
     QUEUED = "queued"  # Enqueued for an execution slot.
-    RUNNING = "running"
+    RUNNING = "running"  # A workflow prompt was dispatched and has not yet settled.
     SLEEPING = "sleeping"  # No runnable work until a message or dependency result arrives.
     PAUSING = "pausing"  # Settling native execution before releasing its slot.
     PAUSED = "paused"  # Scheduling disabled until the user or workflow explicitly resumes it.
@@ -101,17 +101,21 @@ class BaseAgent:
         expected_tool_calls: ExpectedToolCalls | None = None,
     ) -> None:
         """Dispatch the prompt with pending inbox messages and bind its expected tool calls."""
-        previous = self.step_tool_calls
+        previous_step_tool_calls = self.step_tool_calls
         if expected_tool_calls is not None:
             attempt_number = 1
             if (
-                previous is not None
-                and previous.outcome == "not_submitted"
-                and previous.expected == expected_tool_calls
+                previous_step_tool_calls is not None
+                and previous_step_tool_calls.outcome == "not_submitted"
+                and previous_step_tool_calls.expected == expected_tool_calls
             ):
-                attempt_number = previous.attempt_number + 1
+                attempt_number = previous_step_tool_calls.attempt_number + 1
             self.step_tool_calls = StepToolCalls(expected_tool_calls, attempt_number)
-        elif mode == "queue" and previous is not None and previous.outcome is not None:
+        elif (
+            mode == "queue"
+            and previous_step_tool_calls is not None
+            and previous_step_tool_calls.outcome is not None
+        ):
             # Discard a finished step's result without disarming a still-running turn.
             self.step_tool_calls = None
         # Claim this batch before yielding so later mail stays in the inbox.
@@ -127,8 +131,17 @@ class BaseAgent:
                 message = "\n\n".join([*entries, f"[Current time: {now}]\n{message}"])
             await self.agent_runtime.send_message(message, mode=mode)
         except BaseException:
+            # Restore this batch ahead of any messages that arrived during the send.
             self.inbox[:0] = pending
             raise
+        if mode == "queue" and self.state in (AgentState.READY, AgentState.QUEUED, AgentState.SLEEPING):
+            self.state = AgentState.RUNNING
+
+    async def wait_for_settle(self) -> None:
+        """Wait for the workflow turn to finish, leaving paused or retired members in their state."""
+        await self.agent_runtime.wait_for_settle()
+        if self.state == AgentState.RUNNING:
+            self.state = AgentState.SLEEPING
 
     def observe_tool_submission(self, tool: AgentTool) -> AgentTool:
         """Leave the payload with its owner and record successful expected calls for this member."""

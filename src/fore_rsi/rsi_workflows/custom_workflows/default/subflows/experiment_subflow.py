@@ -3,9 +3,10 @@
 
 """Experiment subflow graph for the default workflow."""
 
+from functools import partial
 from typing import TYPE_CHECKING
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import START, StateGraph
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 def build_experiment_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     """Build the Experiment subflow graph for the default workflow.
 
-    START
+    START --> route_experiment_stage
                 +--[initialize_experimenter] --> create_experimenter_workgroup
                 |                                --> study_experiment
                 |                                --> fork_experimenter [seed = study_experiment, quota = 2]
@@ -33,8 +34,22 @@ def build_experiment_subflow(workflow: "DefaultWorkflow") -> StateGraph:
     publish_result --> queue_exploration_feedback --[Command.PARENT]--> route_workflow_stage[exploration]
     """
     graph = StateGraph(dict)
+    graph.add_node(
+        "create_experimenter_workgroup",
+        partial(
+            lambda state, *, name: {
+                **state,
+                "experimenter_workgroup_name": (
+                    workflow.workgroups.get(name) or workflow.create_workgroup(name)
+                ).workgroup_name,
+            },
+            name="experimenters",
+        ),
+    )
+    graph.add_node("route_experiment_stage", lambda _: None)
+    graph.add_edge(START, "route_experiment_stage")
     graph.add_conditional_edges(
-        START,
+        "route_experiment_stage",
         lambda state: state.get("next_experiment_stage"),
         {
             "initialize_experimenter": "create_experimenter_workgroup",
@@ -42,4 +57,5 @@ def build_experiment_subflow(workflow: "DefaultWorkflow") -> StateGraph:
             "experiment": "select_experimenter",
         },
     )
+    graph.add_edge("create_experimenter_workgroup", "study_experiment")
     return graph

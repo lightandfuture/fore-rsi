@@ -78,6 +78,7 @@ class DefaultWorkflow(BaseWorkflow):
         graph.add_node("publish_task", self.task.publish_task)
         graph.add_node("update_agent_scheduler", self.agent_scheduler.update_agent_scheduler)
         graph.add_node("update_task_to_agents", partial(update_task_to_agents, self))
+        graph.add_node("route_workflow_stage", lambda _: None)
 
         # On entry, LangGraph invokes the returned subgraph with the incoming state.
         graph.add_node("run_exploration_area", lambda _: build_exploration_subflow(self).compile())
@@ -92,24 +93,22 @@ class DefaultWorkflow(BaseWorkflow):
                      +--[have_task] ----> parse_task
                      |                    --> wait_for_settle_and_tool_subflow[A=wait_for_task_submission,B=parse_task,C=exit_node]
                      +--[not_have_task] -> wait_for_task_submission
-                                              --> publish_task
-                                              --> wait_for_task_submission
 
-        publish_task --> update_agent_scheduler
-                           +--[initialize]--+--> run_exploration_area
-                           |                +--> run_experiment_area
-                           |                +--> run_watchdog_area
-                           +--[update_task]----> update_task_to_agents --> wait_for_task_submission
+        wait_for_task_submission --> publish_task --> update_agent_scheduler
 
-        run_exploration_area: update_code_pool           --[Command.PARENT]--> route_workflow_stage[experiment]
-        run_experiment_area:  queue_exploration_feedback --[Command.PARENT]--> route_workflow_stage[exploration]
+        update_agent_scheduler
+              +--[initialize]--+--> run_exploration_area
+              |                +--> run_experiment_area
+              |                +--> run_watchdog_area
+              |                +--> wait_for_task_submission
+              +--[update_task]----> update_task_to_agents --> wait_for_task_submission
+
+        run_exploration_area --> route_workflow_stage[experiment]
+        run_experiment_area --> route_workflow_stage[exploration]
 
         route_workflow_stage
               +--[exploration] -> run_exploration_area
               +--[experiment] -> run_experiment_area
-              +--[watchdog] -> run_watchdog_area
-              +--[wait_for_task_submission]
-              +--[finish]       -> exit_node
 
         exit_node --> END
         """
@@ -131,20 +130,30 @@ class DefaultWorkflow(BaseWorkflow):
             },
         )
         graph.add_edge("wait_for_task_submission", "publish_task")
-        graph.add_edge("publish_task", "wait_for_task_submission")
         graph.add_edge("publish_task", "update_agent_scheduler")
 
-        # On first publication, start all three areas in parallel.
+        # On first publication, start the work areas and wait for the next submission in parallel.
         graph.add_conditional_edges(
             "update_agent_scheduler",
-            lambda state: ["exploration", "experiment", "watchdog"]
+            lambda state: ["exploration", "experiment", "watchdog", "wait_for_task_submission"]
             if state["is_first_task_submission"] else "update_task",
             path_map={
                 "exploration": "run_exploration_area",
                 "experiment": "run_experiment_area",
                 "watchdog": "run_watchdog_area",
+                "wait_for_task_submission": "wait_for_task_submission",
                 "update_task": "update_task_to_agents",
             },
         )
         graph.add_edge("update_task_to_agents", "wait_for_task_submission")
+        graph.add_edge("run_exploration_area", "route_workflow_stage")
+        graph.add_edge("run_experiment_area", "route_workflow_stage")
+        graph.add_conditional_edges(
+            "route_workflow_stage",
+            lambda state: state["next_workflow_stage"],
+            {
+                "exploration": "run_exploration_area",
+                "experiment": "run_experiment_area",
+            },
+        )
         graph.add_edge("exit_node", END)

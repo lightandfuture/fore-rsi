@@ -3,16 +3,25 @@
 
 """Explorer research, implementation, feedback, and Workgroup lifecycle subflow."""
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from langgraph.graph import StateGraph
+from fore_rsi.rsi_workflows.workflow_runtimes.task import TaskRevision
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
 
 
-def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
-    """Build the Explorer subflow for direction selection, implementation, and handoff.
+async def run_exploration_subflow(
+    workflow: "DefaultWorkflow",
+    workspace_id: str,
+    task_revision: TaskRevision,
+    *,
+    experiment_results: asyncio.Queue[str],
+    submit_to_experiment: Callable[[str], Awaitable[None]],
+) -> None:
+    """Explore directions, submit proposals for experiment, and read the resulting feedback.
 
     START --> route_exploration_stage
                 +--[initialize_explorer] --> create_workgroup (explorer + checker)
@@ -44,13 +53,13 @@ def build_exploration_subflow(workflow: "DefaultWorkflow") -> StateGraph:
                                                      --> release_explorer_slot
                                                      --> route_exploration_stage[wake_explorer/create_explorer]
                 +--[submit_to_experiment] --> update_direction_pool
-                                              --> update_code_pool --[Command.PARENT]--> route_workflow_stage[experiment]
+                                              --> update_code_pool --> submit_to_experiment
 
     direction_check_result
         +--[direction_confirmed] --> update_direction_pool --> route_exploration_stage[exploration]
         +--[direction_rejected]  --> exploration_direction
         +--[exceed_limit_try]    --> retire
 
-    retire --> retire_workgroup --> exit_node --> END
+    retire --> retire_workgroup --> END
     """
-    return StateGraph(dict)
+    raise NotImplementedError("The exploration subflow is not implemented.")

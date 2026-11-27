@@ -91,12 +91,14 @@ class BaseWorkflow(ABC):
             for member_start in member_starts.values():
                 member_start.result()
         except BaseException:
-            # Failed starts clean themselves up. Close any siblings that already became ready.
+            # Only forget a member after it closes; workflow shutdown can retry failed closes.
+            async def rollback_member(agent_name: str) -> None:
+                await self.close_agent(workgroup.workgroup_name, agent_name)
+                workgroup.agents.pop(agent_name, None)
+
             async with AsyncExitStack() as cleanup:
                 for agent_name in member_starts:
-                    cleanup.push_async_callback(self.close_agent, workgroup_name, agent_name)
-            for agent_name in member_starts:
-                workgroup.agents.pop(agent_name, None)
+                    cleanup.push_async_callback(rollback_member, agent_name)
             if not workgroup.agents:
                 del self.workgroups[workgroup_name]
             raise

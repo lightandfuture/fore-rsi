@@ -12,7 +12,7 @@ from fore_rsi.config import Config
 def validate_config(config: Config, arguments: Sequence[str]) -> None:
     """Validate explicitly supplied CLI options, reporting usage errors with exit code 2."""
     supplied_options = {argument.partition("=")[0] for argument in arguments}
-    run_options = supplied_options & {"--workflow", "--task", "--harness", "--model", "--effort"}
+    run_options = supplied_options & {"--workflow", "--task", "--harness", "--model", "--effort", "--max-attempts"}
     if config.session_action != "run" and run_options:
         print(f"fore-rsi: {config.session_action} does not accept {', '.join(sorted(run_options))}.", file=sys.stderr)
         raise SystemExit(2)

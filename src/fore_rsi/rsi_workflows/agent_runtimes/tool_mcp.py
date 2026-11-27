@@ -5,6 +5,7 @@
 
 import asyncio
 from functools import partial, update_wrapper
+from inspect import signature
 import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractContextManager, asynccontextmanager, nullcontext
@@ -30,6 +31,12 @@ def register_agent_tool(
     """Bind private Workflow dependencies before the tool is registered with MCP."""
     registered_tool = partial(tool, **dependencies)
     update_wrapper(registered_tool, tool)
+    # MCP builds its input schema from the callable signature. Bound workflow
+    # dependencies are not arguments a model can supply.
+    public = signature(tool)
+    registered_tool.__signature__ = public.replace(
+        parameters=[p for p in public.parameters.values() if p.name not in dependencies]
+    )
     return registered_tool
 
 

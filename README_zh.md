@@ -5,11 +5,11 @@
   </picture>
 </h1>
 
-<p align="center">基于 Agent Team 的 RSI 框架，自主并行探索方案、执行工作、验证效果，并以反馈驱动持续改进。</p>
+<p align="center">基于 Agent Team 的 RSI 框架，自主并行探索方案、执行工作、开展实验，并以反馈驱动持续改进。</p>
 
 <p align="center"><a href="README.md">English</a> · 简体中文</p>
 
-ForeRSI 是一个基于 Agent Team 的递归自我改进（Recursive Self-Improvement，RSI）框架。设定目标与约束后，Agent Team 可以自主并行探索方案、协作执行工作、验证效果，并根据反馈调整方案和工作方法，持续推进迭代。
+ForeRSI 是一个基于 Agent Team 的递归自我改进（Recursive Self-Improvement，RSI）框架。设定目标与约束后，Agent Team 可以自主并行探索方案、协作执行工作、开展实验，并根据反馈调整方案和工作方法，持续推进迭代。
 
 ForeRSI 采用去中心化协作理念：Agent 成员直接交流与共享进展，减少信息转发瓶颈，提升并行度，让独立工作持续推进。
 
@@ -129,7 +129,7 @@ ForeRSI 优先复用已安装的 CLI，缺失时调用所选后端的官方安�
 
 > 优化 SGLang 上的 BF16 Qwen3.5-35B-A3B，在请求并发为 1 和 16 时提高输出 token 吞吐量、降低每个输出 token 的耗时（TPOT），并保持回答质量。单机最多使用两张 NVIDIA A100，时间预算为 24 小时。
 >
-> 团队并行度：4 个 Explorer、4 个 Worker、2 个 Verifier。
+> 团队并行度：4 个 Explorer、4 个 Worker、2 个 Experimenter。
 
 如果已经写好任务文件，可以在启动时一并提供。例如，在 ForeRSI 仓库根目录运行 [SGLang 吞吐优化任务](tasks/inference-optimization/sglang-throughput.md)：
 
@@ -177,14 +177,14 @@ fore-rsi delete --session sglang-throughput
 ## 持续改进循环
 
 <p align="center">
-  <img src="docs/assets/improvement-loop_zh.png" alt="Agent Team 探索、执行与验证，反馈驱动下一轮；Watchdog 监督整个任务循环并提醒成员；人类与 Agent 改进任务循环和 Watchdog。" width="720">
+  <img src="docs/assets/improvement-loop_zh.png" alt="Agent Team 探索、执行与实验，反馈驱动下一轮；Watchdog 监督整个任务循环并提醒成员；人类与 Agent 改进任务循环和 Watchdog。" width="720">
 </p>
 
 ### 任务迭代
 
 1. 探索方案：围绕目标与约束，分析已有材料、比较可行路径，形成可执行方案。
-2. 执行工作：落实方案，产出代码、配置、分析、文档等可供验证的结果。
-3. 验证效果：通过测试、测量、模拟或人工评阅取得反馈，对照目标与约束评估结果，决定保留或调整。
+2. 执行工作：落实方案，产出代码、配置、分析、文档等可供实验的结果。
+3. 运行实验：通过测试、测量、模拟或人工评阅取得反馈，对照目标与约束评估结果，决定保留或调整。
 
 反馈回到探索与执行，指导下一轮改进。探索阶段也可以直接请求反馈。
 

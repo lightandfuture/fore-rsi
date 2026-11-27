@@ -12,64 +12,64 @@ if TYPE_CHECKING:
 
 
 def build_experiment_subflow(workflow: "InferenceWorkflow") -> StateGraph:
-    """Build one inference experiment subflow through Verifier admission and evaluation."""
+    """Build the inference subflow that allocates an Experimenter, runs an experiment, and evaluates its result."""
     graph = StateGraph(dict)
     for node_name in (
         "dispatch_experiment_work",
-        "wait_for_verifier_slot",
-        "acquire_verifier",
+        "wait_for_experimenter_slot",
+        "acquire_experimenter",
         "prepare_experiment",
         "wait_for_experiment_resources",
         "run_experiment",
-        "verify_result",
+        "evaluate_experiment_result",
         "record_experiment_result",
         "publish_report",
         "publish_feedback",
-        "release_verifier_slot",
-        "route_verification_decision",
+        "release_experimenter_slot",
+        "route_experiment_decision",
     ):
         graph.add_node(node_name, lambda workflow_state: {})
     graph.add_node("wait_for_stage_completion", lambda workflow_state: {})
     graph.add_node("route_stage_completion", lambda workflow_state: {})
 
-    # START -> dispatch_experiment_work -> wait_for_verifier_slot
-    #          -> acquire_verifier -> prepare_experiment
+    # START -> dispatch_experiment_work -> wait_for_experimenter_slot
+    #          -> acquire_experimenter -> prepare_experiment
     #          -> wait_for_experiment_resources -> run_experiment
-    #          -> wait_for_stage_completion -> verify_result
-    #          -> wait_for_stage_completion -> route_verification_decision
+    #          -> wait_for_stage_completion -> evaluate_experiment_result
+    #          -> wait_for_stage_completion -> route_experiment_decision
     #              +--------------+------------------+
     #              |                    |                  |
     #          retry_experiment record_experiment_result publish_feedback
     #              |                    |                  |
-    #       prepare_experiment     publish_report       release_verifier_slot
+    #       prepare_experiment     publish_report       release_experimenter_slot
     #                                      |             |
     #                                publish_report     |
     #                                      +------+------+
     #                                             |
-    #                                release_verifier_slot -> END
+    #                                release_experimenter_slot -> END
     graph.add_edge(START, "dispatch_experiment_work")
-    graph.add_edge("dispatch_experiment_work", "wait_for_verifier_slot")
-    graph.add_edge("wait_for_verifier_slot", "acquire_verifier")
-    graph.add_edge("acquire_verifier", "prepare_experiment")
+    graph.add_edge("dispatch_experiment_work", "wait_for_experimenter_slot")
+    graph.add_edge("wait_for_experimenter_slot", "acquire_experimenter")
+    graph.add_edge("acquire_experimenter", "prepare_experiment")
     graph.add_edge("prepare_experiment", "wait_for_experiment_resources")
     graph.add_edge("wait_for_experiment_resources", "run_experiment")
     graph.add_edge("run_experiment", "wait_for_stage_completion")
-    graph.add_edge("verify_result", "wait_for_stage_completion")
+    graph.add_edge("evaluate_experiment_result", "wait_for_stage_completion")
     graph.add_edge("wait_for_stage_completion", "route_stage_completion")
     graph.add_conditional_edges(
         "route_stage_completion",
         lambda workflow_state: workflow_state.get(
-            "experiment_stage_route", "verify_result"
+            "experiment_stage_route", "evaluate_experiment_result"
         ),
         {
-            "verify_result": "verify_result",
-            "route_verification_decision": "route_verification_decision",
+            "evaluate_experiment_result": "evaluate_experiment_result",
+            "route_experiment_decision": "route_experiment_decision",
         },
     )
     graph.add_conditional_edges(
-        "route_verification_decision",
+        "route_experiment_decision",
         lambda workflow_state: workflow_state.get(
-            "verification_decision", "publish_experiment_result"
+            "experiment_decision", "publish_experiment_result"
         ),
         {
             "publish_experiment_result": "record_experiment_result",
@@ -78,7 +78,7 @@ def build_experiment_subflow(workflow: "InferenceWorkflow") -> StateGraph:
         },
     )
     graph.add_edge("record_experiment_result", "publish_report")
-    graph.add_edge("publish_report", "release_verifier_slot")
-    graph.add_edge("publish_feedback", "release_verifier_slot")
-    graph.add_edge("release_verifier_slot", END)
+    graph.add_edge("publish_report", "release_experimenter_slot")
+    graph.add_edge("publish_feedback", "release_experimenter_slot")
+    graph.add_edge("release_experimenter_slot", END)
     return graph

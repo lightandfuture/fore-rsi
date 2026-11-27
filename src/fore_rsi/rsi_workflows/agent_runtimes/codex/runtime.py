@@ -3,7 +3,6 @@
 
 """Run one workflow member in the Codex terminal lifecycle."""
 
-from collections import deque
 import json
 import os
 from collections.abc import Sequence
@@ -11,10 +10,7 @@ from pathlib import Path
 
 from fore_rsi.config import AgentConfig, ReasoningEffort
 from fore_rsi.rsi_workflows.agent_runtimes.base_runtime import AgentRuntime, MessageDeliveryMode
-from fore_rsi.rsi_workflows.agent_runtimes.codex.app_server import (
-    CodexAppServer,
-    PendingCodexTurn,
-)
+from fore_rsi.rsi_workflows.agent_runtimes.codex.app_server import CodexAppServer
 from fore_rsi.rsi_workflows.agent_runtimes.codex.record_file import (
     get_codex_thread,
     link_profile_sessions,
@@ -22,7 +18,7 @@ from fore_rsi.rsi_workflows.agent_runtimes.codex.record_file import (
 )
 from fore_rsi.rsi_workflows.agent_runtimes.installation import get_or_install_cli
 from fore_rsi.rsi_workflows.agent_runtimes.tool_mcp import AgentTool, ToolMcpHost
-from fore_rsi.utils.terminal import run_terminal
+from fore_rsi.utils.terminal import PaneLocation
 
 
 class CodexAgentRuntime(AgentRuntime):
@@ -49,11 +45,35 @@ class CodexAgentRuntime(AgentRuntime):
             tool_mcp_host=tool_mcp_host,
             tools=tools,
         )
-        self.pending_message_count = 0
-        self.settle_completion_seq: int | None = None
-        self.settle_state_change_seq = 0
         self.app_server: CodexAppServer | None = None
-        self.pending_app_turns: deque[PendingCodexTurn] = deque()
+
+    async def start(self, workspace_id: str, *, is_entry: bool = False, system_prompt: str | None = None) -> None:
+        """Start one member-local app-server, then attach its native TUI in the workflow pane."""
+        if self.app_server is not None:
+            raise RuntimeError("This runtime already owns a Codex app-server.")
+        profile = self.profile_directory()
+        prepare_codex_profile(profile)
+        link_profile_sessions(profile / "sessions", self.harness_directory / "sessions" / self.get_agent_file_path("").name)
+        server = self.app_server = CodexAppServer(profile)
+        settings = ["-c", f"sqlite_home={json.dumps(str(profile))}"]
+        if system_prompt is not None:
+            settings.extend(["-c", f"developer_instructions={json.dumps(system_prompt)}"])
+        if self.tool_mcp is not None:
+            settings.extend(self.tool_mcp_args())
+        try:
+            await server.start(await self.ensure_installed(), settings)
+            await super().start(workspace_id, is_entry=is_entry, system_prompt=system_prompt)
+        except BaseException:
+            await server.close()
+            self.app_server = None
+            raise
+
+    async def wait_for_agent_ready(self, pane: PaneLocation, agent: dict[str, object]) -> dict[str, object]:
+        """Bind the native thread before publishing this member as ready for input."""
+        agent = await super().wait_for_agent_ready(pane, agent)
+        assert self.app_server is not None
+        await self.app_server.attach_member(self.codex_thread(), self.agent_name)
+        return agent
 
     async def send_message(
         self,
@@ -63,92 +83,30 @@ class CodexAgentRuntime(AgentRuntime):
         """Submit a Codex queue or steer message through the app-server control channel."""
         if mode not in {"queue", "steer"}:
             raise ValueError(f"Unsupported Codex message delivery mode: {mode!r}")
-        if self.terminal_id is None:
+        server = self.app_server
+        if server is None:
             raise RuntimeError("Start the Codex member before sending a message.")
-        thread = self.codex_thread()
-
-        async with self.message_lock:
-            agent = await self.get_agent()
-            if agent is None:
+        # An older turn can finish while this input waits for the lock or the pane check.
+        async with server.register_input() as client_id, self.message_lock:
+            if await self.get_agent() is None:
                 raise RuntimeError("The Codex member is no longer running.")
-            if thread is None:
-                if mode == "steer":
-                    raise RuntimeError("Codex has no active thread to steer.")
-                if self.pending_message_count == 0:
-                    completion_seq = agent.get("completion_seq")
-                    state_change_seq = agent.get("state_change_seq")
-                    self.settle_completion_seq = (
-                        completion_seq if type(completion_seq) is int else None
-                    )
-                    self.settle_state_change_seq = (
-                        state_change_seq if type(state_change_seq) is int else 0
-                    )
-                self.pending_message_count += 1
-                try:
-                    await self.submit_initial_prompt(message)
-                except BaseException:
-                    self.pending_message_count -= 1
-                    if self.pending_message_count == 0:
-                        self.settle_completion_seq = None
-                        self.settle_state_change_seq = 0
-                    raise
-                return
-
-            app_server = await self.get_app_server()
-            self.pending_app_turns.append(
-                await app_server.submit_message(thread, message, mode)
-            )
+            await server.submit_message(client_id, message, mode)
 
     async def wait_for_settle(self) -> None:
-        """Wait for the submitted Codex turn to complete through app-server events."""
-        if self.pending_app_turns:
-            if self.app_server is None:
-                raise RuntimeError("Codex app-server control is not running.")
-            pending_turn = self.pending_app_turns[0]
-            await self.app_server.wait_for_turn(pending_turn)
-            self.pending_app_turns.popleft()
-            return
-        if self.pending_message_count == 0:
+        """Wait for app-server to report completion of the member's submitted inputs."""
+        if self.app_server is None:
             raise RuntimeError("Submit a Codex message before waiting for settle.")
-        try:
-            agent = await self.wait_for_agent_status("idle", "done", "blocked")
-            if self.completion_observed(agent):
-                self.settle_completion_seq = self.read_completion_seq(agent)
-                self.settle_state_change_seq = self.read_state_change_seq(agent)
-                return
-            if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked before completing the submitted message.")
-
-            agent = await self.wait_for_agent_status("working", "blocked")
-            if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked while processing the submitted message.")
-            agent = await self.wait_for_agent_status("idle", "done", "blocked")
-            if agent.get("agent_status") == "blocked":
-                raise RuntimeError("Codex is blocked before completing the submitted message.")
-            if not self.completion_observed(agent):
-                raise RuntimeError("Codex settled without a new completion transition.")
-            self.settle_completion_seq = self.read_completion_seq(agent)
-            self.settle_state_change_seq = self.read_state_change_seq(agent)
-        finally:
-            self.pending_message_count -= 1
-            if self.pending_message_count == 0:
-                self.settle_completion_seq = None
-                self.settle_state_change_seq = 0
+        await self.app_server.wait_for_settle()
 
     async def close(self) -> None:
         """Stop Codex, release the pane, and retain the Codex thread UUID."""
-        self.pending_message_count = 0
-        self.settle_completion_seq = None
-        self.settle_state_change_seq = 0
-        self.pending_app_turns.clear()
-        app_server = self.app_server
-        self.app_server = None
         was_bound = self.terminal_id is not None
         try:
-            if app_server is not None:
-                await app_server.close()
-        finally:
             await super().close()
+        finally:
+            if self.app_server is not None:
+                await self.app_server.close()
+                self.app_server = None
         if was_bound:
             member = self.get_agent_file_path("")
             get_codex_thread(
@@ -190,41 +148,32 @@ class CodexAgentRuntime(AgentRuntime):
         system_prompt: str | None = None,
     ) -> list[str]:
         """Prepare Codex's profile, prompt, tools, and pinned resume command."""
-        self.harness_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        profile = self.profile_directory()
-        sessions = self.harness_directory / "sessions" / self.get_agent_file_path("").name
-        link_profile_sessions(profile / "sessions", sessions)
-        prepare_codex_profile(profile)
-        thread = get_codex_thread(self.get_agent_file_path(".id"), sessions)
+        if self.app_server is None or self.app_server.url is None:
+            raise RuntimeError("Start the Codex app-server before attaching the TUI.")
+        thread = self.codex_thread()
 
         options: list[str] = []
         if self.agent_config.model is not None:
             options.extend(["--model", self.agent_config.model])
         if self.agent_config.effort is not None:
             options.extend(self.effort_args(self.agent_config.effort))
-        if system_prompt is not None:
-            options.extend([
-                "-c",
-                f"developer_instructions={json.dumps(system_prompt, ensure_ascii=False)}",
-            ])
-        if self.tool_mcp is not None:
-            options.extend(self.tool_mcp_args())
-
         command = [
-            str(executable),
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--dangerously-bypass-hook-trust",
-            "-c",
-            f"sqlite_home={json.dumps(str(profile), ensure_ascii=False)}",
-            *options,
+            str(executable), "--remote", self.app_server.url,
+            "--remote-auth-token-env", CodexAppServer.TOKEN_ENV,
         ]
         if thread is not None:
-            command.extend(["resume", thread])
-        return [*command, *arguments]
+            # Remote resume retains the conversation's permissions; Codex rejects overrides.
+            return [*command, "resume", thread, *arguments]
+        return [
+            *command, "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
+            *options, *arguments,
+        ]
 
     def launch_environment(self) -> dict[str, str]:
         """Keep Codex's profile selection with the pane so restore uses the same state."""
-        return {"CODEX_HOME": str(self.profile_directory())}
+        if self.app_server is None:
+            raise RuntimeError("Start the Codex app-server before attaching the TUI.")
+        return {"CODEX_HOME": str(self.profile_directory()), CodexAppServer.TOKEN_ENV: self.app_server.token}
 
     def profile_directory(self) -> Path:
         """Keep the member's Codex profile beside its workflow record file."""
@@ -244,16 +193,6 @@ class CodexAgentRuntime(AgentRuntime):
             ])
         return options
 
-    async def submit_initial_prompt(self, message: str) -> None:
-        """Submit the first prompt through the ready Codex TUI before its thread exists."""
-        if self.terminal_id is None:
-            raise RuntimeError("Start the Codex member before sending a message.")
-        await run_terminal(
-            ["agent", "prompt", self.terminal_id, message],
-            self.terminal_session_name,
-            capture_output=True,
-        )
-
     def codex_thread(self) -> str | None:
         """Return the member's pinned Codex thread, discovering it after its first turn."""
         member = self.get_agent_file_path("")
@@ -261,44 +200,3 @@ class CodexAgentRuntime(AgentRuntime):
             member.with_suffix(".id"),
             self.harness_directory / "sessions" / member.name,
         )
-
-    async def get_app_server(self) -> CodexAppServer:
-        """Start or reuse the control client for this member's Codex profile."""
-        if self.app_server is None:
-            executable = await self.ensure_installed()
-            self.app_server = CodexAppServer(self.profile_directory(), executable)
-        await self.app_server.connect()
-        return self.app_server
-
-    async def wait_for_agent_status(self, *statuses: str) -> dict[str, object]:
-        """Wait for one Terminal agent state and return the observed agent record."""
-        if self.terminal_id is None:
-            raise RuntimeError("Start the Codex member before waiting for settle.")
-        command = ["agent", "wait", self.terminal_id]
-        for status in statuses:
-            command.extend(["--until", status])
-        result = await run_terminal(command, self.terminal_session_name, capture_output=True)
-        return json.loads(result.stdout)["result"]["agent"]
-
-    def completion_observed(self, agent: dict[str, object]) -> bool:
-        """Return whether Terminal reports a completion after the current baseline."""
-        completion_seq = self.read_completion_seq(agent)
-        if completion_seq is not None:
-            return self.settle_completion_seq is None or completion_seq > self.settle_completion_seq
-        state_change_seq = self.read_state_change_seq(agent)
-        return (
-            state_change_seq > self.settle_state_change_seq
-            and agent.get("agent_status") in {"idle", "done"}
-        )
-
-    @staticmethod
-    def read_completion_seq(agent: dict[str, object]) -> int | None:
-        """Read Terminal's optional completion sequence from one agent record."""
-        value = agent.get("completion_seq")
-        return value if type(value) is int else None
-
-    @staticmethod
-    def read_state_change_seq(agent: dict[str, object]) -> int:
-        """Read Terminal's state-change sequence from one agent record."""
-        value = agent.get("state_change_seq")
-        return value if type(value) is int else 0

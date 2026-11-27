@@ -351,6 +351,7 @@ dependencies = [
     { name = "textual" },
     { name = "tyro" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -368,6 +369,7 @@ requires-dist = [
     { name = "textual", specifier = ">=8.2.8,<9" },
     { name = "tyro", specifier = ">=1.0.17,<2" },
     { name = "uvicorn", specifier = ">=0.31.1,<1" },
+    { name = "websockets", specifier = ">=17,<18" },
 ]
 
 [[package]]

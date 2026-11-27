@@ -5,26 +5,27 @@
 
 from typing import TYPE_CHECKING
 
-from langgraph.graph import StateGraph
+from fore_rsi.rsi_workflows.workflow_runtimes.task import TaskRevision
 
 if TYPE_CHECKING:
     from ..workflow import DefaultWorkflow
 
 
-def build_watchdog_subflow(workflow: "DefaultWorkflow") -> StateGraph:
-    """Build the periodic Watchdog subflow for workflow-wide progress checks.
+async def run_watchdog_subflow(
+    workflow: "DefaultWorkflow",
+    workspace_id: str,
+    task_revision: TaskRevision,
+) -> None:
+    """Monitor agent progress until exploration and experiment finish or the workflow is cancelled.
 
     START --> create_watchdog
-                -> wait_for_watchdog_timer
-                --> collect_agent_sessions
-                --> collect_task_artifacts
-                --> review_workflow (MCP: inspect sessions and artifacts, submit review)
-                --> wait_for_settle[A=watchdog_action,B=review_workflow]
-
-    watchdog_action
-        +--[send_reminders]    --> send_reminders --> END
-        +--[publish_report]    --> publish_watchdog_report --> END
-        +--[publish_knowledge] --> publish_watchdog_knowledge --> END
-        +--[continue_watchdog] --> wait_for_watchdog_timer
+                  -> wait_for_watchdog_timer
+                  --> collect_agent_sessions
+                  --> collect_task_artifacts
+                  --> review_workflow (MCP: inspect sessions and artifacts, submit review)
+                  --> wait_for_settle_and_tool_subflow[A=watchdog_action,B=review_workflow,C=exit_node]
+    watchdog_action --> send_reminders --> publish_watchdog_report
+    --> publish_watchdog_knowledge --> wait_for_watchdog_timer
+    exit_node --> END
     """
-    return StateGraph(dict)
+    raise NotImplementedError("The watchdog subflow is not implemented.")
